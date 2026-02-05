@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.venv/
+env/
+venv/
+ENV/
+
+# Build and Dist
+build/
+dist/
+installer_output/
+*.spec
+
+# Whisper Models
+models/
+
+# Media files
+*.mp4
+*.mp3
+*.wav
+*.m4a
+
+# Logs
+crash_log.txt
+
+# Splash screen image (generated during build)
+splash.png
+
+# Results
+*.txt
