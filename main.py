@@ -137,6 +137,7 @@ class App(ctk.CTk):
         self.full_results = []
         self.current_file = None
         self.current_session_path = None  # путь к открытому/сохранённому .wiproject
+        self._session_dirty = False  # были ли изменения после последнего сохранения
         self.current_glossary_path = None
         self.current_glossary = None  # GlossaryData or None
 
@@ -309,8 +310,8 @@ class App(ctk.CTk):
             pass
 
     def _has_unsaved_work(self):
-        """Есть ли незакрытая работа (проект или транскрипция), при закрытии стоит предложить сохранить."""
-        return bool(self.current_session_path) or bool(self.current_file and self.full_results)
+        """Есть ли несохранённые изменения: есть транскрипция и она менялась после последнего сохранения."""
+        return bool(self._session_dirty and self.current_file and self.full_results)
 
     def _on_close(self):
         """Обработка закрытия окна: при наличии работы предложить сохранить проект."""
@@ -956,17 +957,22 @@ class App(ctk.CTk):
         self._lang_inner.update_idletasks()
         self._force_update_scroll_regions()
 
-    def _save_session(self):
-        """Сохранить проект. Возвращает True если сохранено (или нечего сохранять), False если пользователь отменил."""
+    def _save_session(self, force_dialog=False):
+        """Сохранить проект. Возвращает True если сохранено, False если пользователь отменил.
+        Если открыт проект (current_session_path) и не force_dialog — сохраняет в тот же файл без диалога."""
         if not self.current_file or not self.full_results:
             messagebox.showwarning("Warning", "No transcription to save. Select a file and run transcription first.")
             return False
-        suggested = os.path.splitext(os.path.basename(self.current_file))[0] + ".wiproject"
-        path = filedialog.asksaveasfilename(
-            defaultextension=".wiproject",
-            initialfile=suggested,
-            filetypes=[("Whisper project", "*.wiproject"), ("All files", "*.*")]
-        )
+        path = None
+        if not force_dialog and self.current_session_path:
+            path = self.current_session_path
+        if not path:
+            suggested = os.path.splitext(os.path.basename(self.current_file))[0] + ".wiproject"
+            path = filedialog.asksaveasfilename(
+                defaultextension=".wiproject",
+                initialfile=suggested,
+                filetypes=[("Whisper project", "*.wiproject"), ("All files", "*.*")]
+            )
         if not path:
             return False
         transcript_for_save = [
@@ -981,6 +987,7 @@ class App(ctk.CTk):
         )
         if SessionService.save_session(path, session):
             self.current_session_path = path
+            self._session_dirty = False
             self._update_session_title()
             messagebox.showinfo("Success", f"Session saved: {path}")
             return True
@@ -1016,6 +1023,7 @@ class App(ctk.CTk):
             self.btn_save_session.configure(state="normal")
             self.btn_ollama.configure(state="normal")
         self.current_session_path = path
+        self._session_dirty = False
         self._update_session_title()
         self.current_glossary_path = session.glossary_path
         if session.glossary_path and os.path.exists(session.glossary_path):
@@ -1249,6 +1257,7 @@ class App(ctk.CTk):
         self.after(0, lambda: self.btn_stop.configure(state="disabled"))
         self.after(0, lambda: self.btn_browse.configure(state="normal"))
         if self.full_results:
+            self._session_dirty = True
             self.after(0, lambda: self.btn_export_txt.configure(state="normal"))
             self.after(0, lambda: self.btn_save_session.configure(state="normal"))
             self.after(0, lambda: self.btn_ollama.configure(state="normal"))
@@ -1293,9 +1302,11 @@ class App(ctk.CTk):
                 sug_lbl.grid(row=2, column=0, columnspan=2, padx=(56, 8), pady=(0, 4), sticky="w")
                 def _accept(ix=idx):
                     self.full_results[ix]["text"] = self.full_results[ix].pop("suggested_text", self.full_results[ix]["text"])
+                    self._session_dirty = True
                     self._rebuild_segment_list()
                 def _reject(ix=idx):
                     self.full_results[ix].pop("suggested_text", None)
+                    self._session_dirty = True
                     self._rebuild_segment_list()
                 btn_accept = ctk.CTkButton(row_f, text=t("editor.accept"), width=70, fg_color="green", hover_color="darkgreen", command=_accept)
                 btn_accept.grid(row=3, column=0, padx=(56, 4), pady=(0, 4), sticky="w")
