@@ -8,6 +8,7 @@ import os
 import tempfile
 import threading
 import time
+from datetime import datetime
 from typing import Optional, Tuple
 
 try:
@@ -113,7 +114,10 @@ class MicRecordService:
             return None, "No audio data recorded"
         try:
             data = np.concatenate(chunks_snapshot, axis=0)
-            base = os.path.join(output_dir, "mic_record")
+            # Имя файла: число.месяц.год_час.минута.секунда.wav
+            now = datetime.now()
+            base_name = now.strftime("%d.%m.%Y_%H.%M.%S")
+            base = os.path.join(output_dir, base_name)
             path = base + ".wav"
             idx = 0
             while os.path.exists(path):

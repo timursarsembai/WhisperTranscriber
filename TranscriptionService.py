@@ -43,13 +43,17 @@ class TranscriptionService:
                 except Exception as e:
                     print(f"Ошибка при добавлении DLL пути {path}: {e}")
 
+    @staticmethod
+    def get_models_cache_dir() -> str:
+        """Единый каталог кэша моделей (тот же, что используется при load_model)."""
+        if getattr(sys, "frozen", False):
+            return os.path.join(os.path.dirname(sys.executable), "models")
+        return os.path.join(os.getcwd(), "models")
+
     def load_model(self, model_size="large-v3", device="cuda", compute_type="float16"):
         """Загрузка модели Whisper."""
         try:
-            if getattr(sys, 'frozen', False):
-                models_dir = os.path.join(os.path.dirname(sys.executable), "models")
-            else:
-                models_dir = os.path.join(os.getcwd(), "models")
+            models_dir = self.get_models_cache_dir()
             if not os.path.exists(models_dir):
                 os.makedirs(models_dir)
             if device == "cpu":

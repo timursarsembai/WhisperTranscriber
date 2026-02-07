@@ -1,10 +1,11 @@
+import glob
 import os
 import re
 import shutil
 import tempfile
 import threading
 import time
-from typing import Optional
+from typing import Dict, Optional
 import customtkinter as ctk
 from tkinter import filedialog, messagebox, Canvas, Frame, StringVar, Toplevel, Label
 from TranscriptionService import TranscriptionService
@@ -117,6 +118,73 @@ from language_names import get_language_combo_values, language_display_to_code
 # UI strings: use t("key") for localized text; keys are in locales/en.json, locales/ru.json
 from i18n import t, set_locale, get_locale, get_available_locales, load_locale_preference, save_locale_preference, load_config, save_config
 
+# Маппинг размера модели из UI на repo_id в Hugging Face
+MODEL_SIZE_TO_REPO = {
+    "tiny": "Systran/faster-whisper-tiny",
+    "base": "Systran/faster-whisper-base",
+    "small": "Systran/faster-whisper-small",
+    "medium": "Systran/faster-whisper-medium",
+    "large-v3": "Systran/faster-whisper-large-v3",
+}
+
+
+def _format_size_bytes(size_bytes: int) -> str:
+    """Форматирует размер в байтах в строку вида '450 MB' или '1.2 GB'."""
+    if size_bytes < 0:
+        return ""
+    if size_bytes >= 1024 ** 3:
+        return f"{size_bytes / 1024**3:.1f} GB"
+    return f"{size_bytes / 1024**2:.0f} MB"
+
+
+def _get_model_downloaded_size_bytes(cache_dir: str, model_id: str) -> Optional[int]:
+    """Возвращает размер скачанной модели в байтах или None если не скачана."""
+    folder = f"models--Systran--faster-whisper-{model_id}"
+    snap_path = os.path.join(cache_dir, folder, "snapshots")
+    if not os.path.isdir(snap_path):
+        return None
+    total = 0
+    try:
+        for root, _dirs, files in os.walk(snap_path):
+            for f in files:
+                path = os.path.join(root, f)
+                try:
+                    total += os.path.getsize(path)
+                except (OSError, ValueError):
+                    pass
+    except (OSError, ValueError):
+        return None
+    return total if total > 0 else None
+
+
+def _get_models_downloaded_status() -> Dict[str, bool]:
+    """Возвращает словарь model_id -> True если модель скачана, иначе False."""
+    cache_dir = TranscriptionService.get_models_cache_dir()
+    result = {mid: False for mid in MODEL_SIZE_TO_REPO}
+    try:
+        import huggingface_hub as hfh
+        if hasattr(hfh, "scan_cache_dir"):
+            info = hfh.scan_cache_dir(cache_dir)
+            for repo in getattr(info, "repos", []):
+                repo_id = getattr(repo, "repo_id", None) or ""
+                for mid, rid in MODEL_SIZE_TO_REPO.items():
+                    if rid == repo_id:
+                        result[mid] = True
+                        break
+            return result
+    except Exception:
+        pass
+    # Запасной вариант: проверка папки и model.bin
+    for mid in MODEL_SIZE_TO_REPO:
+        folder = f"models--Systran--faster-whisper-{mid}"
+        dir_path = os.path.join(cache_dir, folder, "snapshots")
+        if not os.path.isdir(dir_path):
+            continue
+        bins = glob.glob(os.path.join(dir_path, "*", "model.bin"))
+        if bins:
+            result[mid] = True
+    return result
+
 # Splash screen support for PyInstaller
 try:
     import pyi_splash
@@ -148,6 +216,7 @@ class App(ctk.CTk):
         self._session_dirty = False  # были ли изменения после последнего сохранения
         self.current_glossary_path = None
         self.current_glossary = None  # GlossaryData or None
+        self.file_transcripts = {}  # rel_path -> list of segments (multi-file project state)
 
         if project_dir and os.path.isdir(project_dir):
             self.current_project_dir = os.path.abspath(project_dir)
@@ -169,16 +238,32 @@ class App(ctk.CTk):
     def _setup_ui(self):
         self._tooltip_after_id = None
         self._tooltip_win = None
+        self._left_panel_width = 220
         self._right_panel_width = 300
-        # Две колонки: [Content] [Transcription Settings | Glossary | Interface Settings — одна панель при открытии]
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_columnconfigure(1, weight=0)
+        # Три колонки: [Project files] [Content] [Settings]
+        self.grid_columnconfigure(0, minsize=self._left_panel_width)
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_columnconfigure(2, weight=0)
         self.grid_rowconfigure(3, weight=1)
+
+        # --- Левая панель: список файлов проекта ---
+        self._left_panel = ctk.CTkFrame(self, width=self._left_panel_width, fg_color=("gray90", "gray18"))
+        self._left_panel.grid(row=0, column=0, rowspan=5, padx=(20, 0), pady=(0, 20), sticky="nsew")
+        self._left_panel.grid_propagate(False)
+        self._left_panel.grid_columnconfigure(0, weight=1)
+        self._left_panel.grid_rowconfigure(1, weight=1)
+        self._left_panel_title = ctk.CTkLabel(
+            self._left_panel, text=t("project_files.title"), font=ctk.CTkFont(size=13, weight="bold")
+        )
+        self._left_panel_title.grid(row=0, column=0, padx=10, pady=(10, 6), sticky="w")
+        self._left_panel_files_scroll = ctk.CTkScrollableFrame(self._left_panel, fg_color="transparent")
+        self._left_panel_files_scroll.grid(row=1, column=0, sticky="nsew", padx=6, pady=(0, 10))
+        self._left_panel_files_scroll.grid_columnconfigure(0, weight=1)
 
         # --- Одна строка: [Открыть] [Сохранить] | [Выбрать файл] [Старт] [Стоп] (размер кнопок прежний, иконки крупнее за счёт шрифта) ---
         _icon_font = ctk.CTkFont(size=20)
         self.top_frame = ctk.CTkFrame(self)
-        self.top_frame.grid(row=0, column=0, padx=20, pady=(10, 6), sticky="ew")
+        self.top_frame.grid(row=0, column=1, padx=20, pady=(10, 6), sticky="ew")
         self.top_frame.grid_columnconfigure(6, weight=1)
         self.top_frame.grid_rowconfigure(1, weight=0)
 
@@ -243,7 +328,7 @@ class App(ctk.CTk):
 
         # Строка прогресса и подпись файла под ней
         self.control_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.control_frame.grid(row=1, column=0, padx=20, pady=(0, 4), sticky="ew")
+        self.control_frame.grid(row=1, column=1, padx=20, pady=(0, 4), sticky="ew")
         self.control_frame.grid_columnconfigure(0, weight=1)
         self.progress_bar = ctk.CTkProgressBar(self.control_frame)
         self.progress_bar.grid(row=0, column=0, padx=0, pady=0, sticky="ew")
@@ -251,14 +336,14 @@ class App(ctk.CTk):
 
         # Под прогресс-баром — подпись с именем файла (или «Файл не выбран (форматы)»)
         self._file_status_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self._file_status_frame.grid(row=2, column=0, padx=20, pady=(0, 8), sticky="ew")
+        self._file_status_frame.grid(row=2, column=1, padx=20, pady=(0, 8), sticky="ew")
         self._file_status_frame.grid_columnconfigure(0, weight=1)
         self.lbl_file = ctk.CTkLabel(self._file_status_frame, text=t("top.no_file_formats"), anchor="w")
         self.lbl_file.grid(row=0, column=0, padx=10, sticky="w")
 
         # Область вывода: во время транскрипции — потоковый текст; после — список сегментов с Play-at-line
         self._editor_container = ctk.CTkFrame(self, fg_color="transparent")
-        self._editor_container.grid(row=3, column=0, padx=20, pady=(0, 20), sticky="nsew")
+        self._editor_container.grid(row=3, column=1, padx=20, pady=(0, 20), sticky="nsew")
         self._editor_container.grid_columnconfigure(0, weight=1)
         self._editor_container.grid_rowconfigure(0, weight=1)
         self.txt_output = ctk.CTkTextbox(self._editor_container, font=("Segoe UI", 12))
@@ -271,12 +356,12 @@ class App(ctk.CTk):
         # Правая панель: своя разметка — кнопки вкладок вверху, контент сразу под ними (без CTkTabview). По умолчанию видна.
         self.settings_panel_visible = True
         self._right_panel = ctk.CTkFrame(self, width=self._right_panel_width, fg_color=("gray85", "gray20"))
-        self._right_panel.grid(row=0, column=1, rowspan=5, padx=(0, 20), pady=(0, 20), sticky="nsew")
-        self.grid_columnconfigure(1, minsize=self._right_panel_width)
+        self._right_panel.grid(row=0, column=2, rowspan=5, padx=(0, 20), pady=(0, 20), sticky="nsew")
+        self.grid_columnconfigure(2, minsize=self._right_panel_width)
         self._right_panel.grid_propagate(False)
         self._right_panel.grid_columnconfigure(0, weight=1)
         self._right_panel.grid_rowconfigure(1, weight=1)  # контент в row 1 растягивается
-        self.geometry(f"{800 + self._right_panel_width}x600")
+        self.geometry(f"{800 + self._left_panel_width + self._right_panel_width}x600")
         self.after(100, self._force_update_scroll_regions)
         self.after(50, self._maximize_window)
         # Строка вкладок — сразу вверху, без отступа
@@ -315,7 +400,7 @@ class App(ctk.CTk):
 
         # Bottom panel: Export, Ollama, справа — Настройки
         self.export_frame = ctk.CTkFrame(self)
-        self.export_frame.grid(row=4, column=0, padx=20, pady=(0, 20), sticky="ew")
+        self.export_frame.grid(row=4, column=1, padx=20, pady=(0, 20), sticky="ew")
         self.export_frame.grid_columnconfigure(2, weight=1)
         self.btn_export_txt = ctk.CTkButton(self.export_frame, text=t("export.txt"), command=self._export_txt, state="disabled")
         self.btn_export_txt.grid(row=0, column=0, padx=10, pady=10)
@@ -327,6 +412,67 @@ class App(ctk.CTk):
             command=self._toggle_settings_panel,
         )
         self.btn_settings.grid(row=0, column=3, padx=10, pady=10)
+
+        self._refresh_project_files_list()
+
+    def _refresh_project_files_list(self):
+        """Заполнить левую панель списком аудио/видео файлов из папки проекта или заглушкой."""
+        for w in self._left_panel_files_scroll.winfo_children():
+            w.destroy()
+        if not self.current_project_dir or not os.path.isdir(self.current_project_dir):
+            lbl = ctk.CTkLabel(
+                self._left_panel_files_scroll, text=t("project_files.no_project"),
+                text_color="gray", font=ctk.CTkFont(size=11), wraplength=self._left_panel_width - 24,
+            )
+            lbl.grid(row=0, column=0, sticky="w", padx=4, pady=8)
+            return
+        exts = (".mp3", ".mp4", ".wav", ".m4a", ".mkv")
+        try:
+            names = [f for f in os.listdir(self.current_project_dir)
+                     if os.path.isfile(os.path.join(self.current_project_dir, f)) and f.lower().endswith(exts)]
+        except Exception:
+            names = []
+        names.sort(key=str.lower)
+        for i, name in enumerate(names):
+            rel_path = name
+            has_transcript = bool(self.file_transcripts.get(rel_path))
+            text = name + (" \u2713" if has_transcript else "")
+            btn = ctk.CTkButton(
+                self._left_panel_files_scroll, text=text, anchor="w",
+                command=lambda r=rel_path: self._on_project_file_clicked(r),
+                fg_color=("gray80", "gray28") if has_transcript else ("gray85", "gray22"),
+            )
+            btn.grid(row=i, column=0, sticky="ew", padx=4, pady=2)
+        self._left_panel_files_scroll.grid_columnconfigure(0, weight=1)
+
+    def _on_project_file_clicked(self, rel_path: str):
+        """Переключить текущий файл на выбранный в левой панели и подгрузить его транскрипт."""
+        if not self.current_project_dir:
+            return
+        # Сохранить транскрипт текущего файла в кэш перед переключением (в т.ч. несохранённые правки)
+        if self.current_file and self.full_results:
+            prev_rel = SessionService._make_path_relative_to_project(
+                self.current_file, os.path.join(self.current_project_dir, "_.wiproject")
+            )
+            self.file_transcripts[prev_rel] = list(self.full_results)
+        abs_path = os.path.normpath(os.path.join(self.current_project_dir, rel_path))
+        self.current_file = abs_path
+        self.full_results = list(self.file_transcripts.get(rel_path, []))
+        self.lbl_file.configure(text=os.path.basename(abs_path))
+        if self.full_results:
+            self._show_segment_editor()
+            self._rebuild_segment_list()
+            self.btn_export_txt.configure(state="normal")
+            self.btn_save_session.configure(state="normal")
+            self.btn_ollama.configure(state="normal")
+        else:
+            self._segment_scroll.grid_remove()
+            self.txt_output.grid(row=0, column=0, sticky="nsew")
+            self.txt_output.delete("1.0", "end")
+            self.btn_export_txt.configure(state="disabled")
+            self.btn_save_session.configure(state="disabled")
+            self.btn_ollama.configure(state="disabled")
+        self._session_dirty = False
 
     def _on_settings_tab_changed(self, value: str):
         """Показать выбранную вкладку настроек (value — переведённое название)."""
@@ -426,10 +572,10 @@ class App(ctk.CTk):
         except Exception:
             w, h, x, y = 800, 600, 100, 100
         if open_panel:
-            self.grid_columnconfigure(1, minsize=self._right_panel_width)
+            self.grid_columnconfigure(2, minsize=self._right_panel_width)
             self.geometry(f"{w + self._right_panel_width}x{h}+{x}+{y}")
         else:
-            self.grid_columnconfigure(1, minsize=0)
+            self.grid_columnconfigure(2, minsize=0)
             self.geometry(f"{max(400, w - self._right_panel_width)}x{h}+{x}+{y}")
 
     def _toggle_settings_panel(self):
@@ -446,8 +592,8 @@ class App(ctk.CTk):
             self._ensure_panel_geometry(False)
         else:
             was_open = self.settings_panel_visible
-            self.grid_columnconfigure(1, minsize=self._right_panel_width)
-            self._right_panel.grid(row=0, column=1, rowspan=5, padx=(0, 20), pady=(0, 20), sticky="nsew")
+            self.grid_columnconfigure(2, minsize=self._right_panel_width)
+            self._right_panel.grid(row=0, column=2, rowspan=5, padx=(0, 20), pady=(0, 20), sticky="nsew")
             self.settings_panel_visible = True
             self._refresh_ui()
             if not was_open:
@@ -514,6 +660,10 @@ class App(ctk.CTk):
         _model_inner.pack(fill="x", padx=0, pady=0)
         _model_hover_fg = ("#D6E4FF", "#2A4A6E")
         self._model_row_frames = {}
+        self._model_status_labels = {}
+        self._model_progress_bars = {}
+        self._model_delete_btns = {}
+        self._model_downloading = None
         for model_id, model_desc in model_opts:
             row_f = ctk.CTkFrame(_model_inner, fg_color="transparent", corner_radius=4, cursor="hand2")
             row_f.pack(fill="x", padx=4, pady=2)
@@ -540,12 +690,34 @@ class App(ctk.CTk):
             name_lbl.pack(fill="x")
             desc_lbl = ctk.CTkLabel(row_f, text=f"({t(model_desc)})", font=_hint_font, text_color=_hint_color, anchor="nw", wraplength=220, justify="left", cursor="hand2")
             desc_lbl.pack(fill="x")
+            status_row = ctk.CTkFrame(row_f, fg_color="transparent")
+            status_row.pack(fill="x")
+            status_lbl = ctk.CTkLabel(status_row, text="", font=ctk.CTkFont(size=11), anchor="w", cursor="hand2", text_color=("gray50", "gray55"))
+            status_lbl.pack(side="left", fill="x", expand=True)
+            self._model_status_labels[model_id] = status_lbl
+            delete_lbl = ctk.CTkLabel(
+                status_row, text=t("model.delete"), font=ctk.CTkFont(size=10),
+                text_color="#c62828", cursor="hand2", anchor="e",
+            )
+            delete_lbl.pack(side="right", padx=(4, 0))
+            self._model_delete_btns[model_id] = delete_lbl
             def _model_click(e, v=model_id):
-                self._pick_model(v)
-            for w in (row_f, name_lbl, desc_lbl):
+                self._on_model_row_clicked(v)
+            def _delete_click(e, v=model_id):
+                self._delete_model(v)
+                return "break"
+            delete_lbl.bind("<Button-1>", _delete_click)
+            progress_f = ctk.CTkFrame(row_f, fg_color="transparent", height=4)
+            progress_f.pack_propagate(False)
+            pb = ctk.CTkProgressBar(progress_f, height=4, width=200)
+            pb.pack(fill="x")
+            pb.set(0)
+            self._model_progress_bars[model_id] = (progress_f, pb)
+            for w in (row_f, name_lbl, desc_lbl, status_lbl):
                 w.bind("<Enter>", _row_enter)
                 w.bind("<Leave>", _row_leave)
                 w.bind("<Button-1>", _model_click)
+        self._refresh_model_status_labels()
         # подсветка выбранной модели
         self._pick_model(self._settings_model_value)
         row += 1
@@ -757,6 +929,10 @@ class App(ctk.CTk):
             children = row_f.winfo_children()
             if len(children) >= 2:
                 children[1].configure(text=f"({t(key)})")
+        if hasattr(self, "_model_status_labels"):
+            self._refresh_model_status_labels()
+        for btn in getattr(self, "_model_delete_btns", {}).values():
+            btn.configure(text=t("model.delete"))
         if hasattr(self, "_lang_buttons"):
             self._rebuild_language_list()
         elif hasattr(self, "_lang_selection_label"):
@@ -943,6 +1119,160 @@ class App(ctk.CTk):
         self._device_var.set("auto")
         self._compute_var.set("float16")
 
+    def _refresh_model_status_labels(self):
+        """Обновить подписи статуса (Скачана X MB/GB или Не скачана) для всех моделей."""
+        downloading = getattr(self, "_model_downloading", None)
+        status = _get_models_downloaded_status()
+        cache_dir = TranscriptionService.get_models_cache_dir()
+        for mid, lbl in getattr(self, "_model_status_labels", {}).items():
+            if mid == downloading:
+                continue
+            try:
+                if status.get(mid):
+                    size_bytes = _get_model_downloaded_size_bytes(cache_dir, mid)
+                    size_str = _format_size_bytes(size_bytes) if size_bytes else ""
+                    if size_str:
+                        text = t("model.status.downloaded_size", size=size_str)
+                    else:
+                        text = t("model.status.downloaded")
+                    lbl.configure(text=text, text_color=("gray40", "gray55"))
+                else:
+                    lbl.configure(text=t("model.status.not_downloaded"), text_color=("#b85c00", "#e68a00"))
+            except Exception:
+                pass
+        for mid, delete_btn in getattr(self, "_model_delete_btns", {}).items():
+            try:
+                if mid == downloading or not status.get(mid):
+                    delete_btn.pack_forget()
+                else:
+                    delete_btn.pack(side="right", padx=(4, 0))
+            except Exception:
+                pass
+        for mid, (pf, pb) in getattr(self, "_model_progress_bars", {}).items():
+            if mid == downloading:
+                continue
+            try:
+                pb.pack_forget()
+                pf.pack_forget()
+            except Exception:
+                pass
+
+    def _set_model_download_progress(self, model_id: str, n: float, total: float):
+        """Обновить прогресс загрузки модели (вызывается из главного потока)."""
+        if model_id != getattr(self, "_model_downloading", None):
+            return
+        try:
+            lbl = self._model_status_labels.get(model_id)
+            pf, pb = self._model_progress_bars.get(model_id, (None, None))
+            if lbl and pf and pb:
+                if total and total > 0:
+                    pct = min(100, max(0, int(100 * n / total)))
+                    lbl.configure(text=t("model.status.downloading", pct=pct), text_color=("gray30", "gray60"))
+                    pf.pack(fill="x", pady=(0, 2))
+                    pb.pack(fill="x")
+                    pb.set(n / total)
+                else:
+                    lbl.configure(text=t("model.status.downloading", pct=0), text_color=("gray30", "gray60"))
+        except Exception:
+            pass
+
+    def _on_model_row_clicked(self, model_id: str):
+        """Клик по строке модели: если скачана — выбор; если нет — запуск загрузки с прогрессом."""
+        status = _get_models_downloaded_status()
+        if status.get(model_id):
+            self._pick_model(model_id)
+            return
+        if getattr(self, "_model_downloading", None) is not None:
+            messagebox.showinfo(t("app.title"), t("model.status.wait_downloading"))
+            return
+        self._model_downloading = model_id
+        repo_id = MODEL_SIZE_TO_REPO.get(model_id)
+        if not repo_id:
+            self._model_downloading = None
+            return
+        cache_dir = TranscriptionService.get_models_cache_dir()
+        os.makedirs(cache_dir, exist_ok=True)
+
+        app = self
+        mid = model_id
+
+        def run_download():
+            err = None
+            try:
+                import inspect
+                import huggingface_hub as hfh
+                from tqdm import tqdm as base_tqdm
+
+                # Прогресс-бар для UI: передаём в главный поток n/total; фильтруем kwargs,
+                # чтобы не передавать name= (его не принимает старый tqdm) и прочие лишние аргументы
+                try:
+                    _valid_tqdm_params = set(inspect.signature(base_tqdm.__init__).parameters) - {"self"}
+                except Exception:
+                    _valid_tqdm_params = {"iterable", "desc", "total", "leave", "file", "ncols", "mininterval", "maxinterval", "miniters", "ascii", "disable", "unit", "unit_scale", "dynamic_ncols", "smoothing", "bar_format", "initial", "position", "postfix", "unit_divisor", "write_stdout", "lock_args", "nrows", "colour", "delay"}
+
+                class ProgressTqdm(base_tqdm):
+                    def __init__(self, *args, **kwargs):
+                        kwargs = dict(kwargs)
+                        if "name" in kwargs:
+                            kwargs.setdefault("desc", kwargs.pop("name"))
+                        kwargs = {k: v for k, v in kwargs.items() if k in _valid_tqdm_params}
+                        super().__init__(*args, **kwargs)
+
+                    def update(self, n=1):
+                        super().update(n)
+                        if self.total and self.total > 0:
+                            nn, tt = self.n, self.total
+                            app.after(0, lambda: app._set_model_download_progress(mid, nn, tt))
+
+                allow_patterns = ["config.json", "preprocessor_config.json", "model.bin", "tokenizer.json", "vocabulary.*"]
+                hfh.snapshot_download(
+                    repo_id=repo_id,
+                    cache_dir=cache_dir,
+                    allow_patterns=allow_patterns,
+                    tqdm_class=ProgressTqdm,
+                )
+            except Exception as e:
+                err = str(e) or "Download failed"
+
+            def done():
+                app._model_downloading = None
+                app._refresh_model_status_labels()
+                if err:
+                    messagebox.showerror(t("app.title"), err)
+                else:
+                    app._pick_model(mid)
+
+            app.after(0, done)
+
+        threading.Thread(target=run_download, daemon=True).start()
+        self._set_model_download_progress(model_id, 0, 1)
+
+    def _delete_model(self, model_id):
+        """Удалить модель с диска (если скачана)."""
+        mid = model_id
+        if not mid or mid not in MODEL_SIZE_TO_REPO:
+            return
+        status = _get_models_downloaded_status()
+        if not status.get(mid):
+            messagebox.showinfo(t("app.title"), t("model.delete_not_downloaded"))
+            return
+        cache_dir = TranscriptionService.get_models_cache_dir()
+        size_bytes = _get_model_downloaded_size_bytes(cache_dir, mid)
+        size_str = _format_size_bytes(size_bytes) if size_bytes else ""
+        msg = t("model.delete_confirm", model=mid, size=size_str) if size_str else t("model.delete_confirm_short", model=mid)
+        if not messagebox.askyesno(t("app.title"), msg):
+            return
+        folder = os.path.join(cache_dir, f"models--Systran--faster-whisper-{mid}")
+        try:
+            if os.path.isdir(folder):
+                shutil.rmtree(folder)
+            self._refresh_model_status_labels()
+            messagebox.showinfo(t("app.title"), t("model.delete_done"))
+            if mid == getattr(self, "_settings_model_value", None):
+                self.service.model = None
+        except Exception as e:
+            messagebox.showerror(t("app.title"), str(e) or t("model.delete_error"))
+
     def _pick_model(self, value):
         """Update the model selection label and highlight the selected row."""
         self._settings_model_value = value
@@ -1042,16 +1372,29 @@ class App(ctk.CTk):
             {"start": s["start"], "end": s["end"], "text": s["text"]}
             for s in self.full_results
         ]
+        project_dir = os.path.dirname(os.path.abspath(path))
+        current_rel = SessionService._make_path_relative_to_project(self.current_file, path)
+        if path == self.current_session_path and self.current_project_dir == project_dir:
+            file_transcripts_to_save = dict(self.file_transcripts)
+        else:
+            file_transcripts_to_save = {}
+        file_transcripts_to_save[current_rel] = transcript_for_save
         session = SessionService.build_session(
             audio_path=self.current_file,
             transcript=transcript_for_save,
             model_used=self._settings_model_value,
             glossary_path=self.current_glossary_path,
+            project_path=path,
+            file_transcripts=file_transcripts_to_save,
+            current_file_rel=current_rel,
         )
         if SessionService.save_session(path, session):
             self.current_session_path = path
+            self.current_project_dir = project_dir
+            self.file_transcripts = file_transcripts_to_save
             self._session_dirty = False
             self._update_session_title()
+            self._refresh_project_files_list()
             messagebox.showinfo("Success", f"Session saved: {path}")
             return True
         messagebox.showerror("Error", "Failed to save session.")
@@ -1078,6 +1421,7 @@ class App(ctk.CTk):
                 "Audio file not found",
                 f"The audio file was not found:\n{session.audio_path}\n\nTranscript will be loaded, but you won't be able to re-transcribe without the file."
             )
+        self.file_transcripts = getattr(session, "file_transcripts", None) or {}
         self.current_file = session.audio_path
         self.full_results = session.transcript
         self.lbl_file.configure(text=os.path.basename(session.audio_path))
@@ -1090,10 +1434,15 @@ class App(ctk.CTk):
             self.btn_export_txt.configure(state="normal")
             self.btn_save_session.configure(state="normal")
             self.btn_ollama.configure(state="normal")
+        else:
+            self.btn_export_txt.configure(state="disabled")
+            self.btn_save_session.configure(state="disabled")
+            self.btn_ollama.configure(state="disabled")
         self.current_session_path = path
         self.current_project_dir = os.path.dirname(os.path.abspath(path))
         self._session_dirty = False
         self._update_session_title()
+        self._refresh_project_files_list()
         self.current_glossary_path = session.glossary_path
         if session.glossary_path and os.path.exists(session.glossary_path):
             loaded = GlossaryService.load(session.glossary_path)
@@ -1593,6 +1942,12 @@ class App(ctk.CTk):
             self.current_file = path
             self.lbl_file.configure(text=os.path.basename(path))
             self.full_results = list(stream_results)
+            if self.current_project_dir and path:
+                rel = SessionService._make_path_relative_to_project(
+                    path, os.path.join(self.current_project_dir, "_.wiproject")
+                )
+                self.file_transcripts[rel] = list(self.full_results)
+                self._refresh_project_files_list()
             self._session_dirty = True
             self._show_segment_editor()
             self._rebuild_segment_list()
@@ -1661,8 +2016,14 @@ class App(ctk.CTk):
             )
             results = self._strip_tail_hallucinations(results)
             self.full_results = results
+            if self.current_project_dir and self.current_file:
+                rel = SessionService._make_path_relative_to_project(
+                    self.current_file, os.path.join(self.current_project_dir, "_.wiproject")
+                )
+                self.file_transcripts[rel] = list(self.full_results)
+                self.after(0, self._refresh_project_files_list)
             self._on_complete("Done!")
-            
+
         except Exception as e:
             self._on_complete(f"An error occurred: {str(e)}")
 
@@ -1845,8 +2206,15 @@ def _run_start_window():
     Перед destroy() отменяем все запланированные after-callback'и через Tcl, чтобы не было 'invalid command name'."""
     root = ctk.CTk()
     root.title(t("app.title"))
-    root.geometry("420x200")
     root.resizable(False, False)
+    w, h = 420, 200
+    root.geometry(f"{w}x{h}")
+    root.update_idletasks()
+    sw = root.winfo_screenwidth()
+    sh = root.winfo_screenheight()
+    x = (sw - w) // 2
+    y = (sh - h) // 2
+    root.geometry(f"{w}x{h}+{x}+{y}")
     choice = {"open": None, "project_dir": None}
 
     def on_open():
