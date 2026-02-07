@@ -41,6 +41,11 @@ No additional software (Python, libraries, CUDA Toolkit) needs to be installed â
 - `build.py` - EXE build script.
 - `models/` - folder where models will be downloaded.
 
+## Optional: YouTube and microphone import
+- **YouTube**: Paste a YouTube link and click "Load" to download audio, then transcribe as usual. Uses `yt-dlp`; FFmpeg for conversion to MP3 is provided by `imageio-ffmpeg` (no manual PATH setup). Install: `pip install yt-dlp imageio-ffmpeg` or use `requirements.txt`.
+- **Microphone**: Record from the microphone, then transcribe. Requires `sounddevice` and `soundfile` (`pip install sounddevice soundfile`).
+
 ## Technical Details
 - **Technologies**: Python 3.13, CustomTkinter, faster-whisper.
 - **Portability**: All dependencies (including CUDA DLLs) are packed into the EXE. Models are stored in the `models` folder next to the EXE.
+- **Development dependencies**: See `requirements.txt` for optional features (YouTube, mic).

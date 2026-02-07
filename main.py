@@ -1,9 +1,15 @@
 import os
 import re
+import shutil
+import tempfile
 import threading
+import time
+from typing import Optional
 import customtkinter as ctk
 from tkinter import filedialog, messagebox, Canvas, Frame, StringVar, Toplevel, Label
 from TranscriptionService import TranscriptionService
+import YouTubeDownloadService
+from MicRecordService import MicRecordService
 
 
 class DarkScrollbar(Canvas):
@@ -122,7 +128,7 @@ ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
 
 class App(ctk.CTk):
-    def __init__(self):
+    def __init__(self, open_session_path: Optional[str] = None, project_dir: Optional[str] = None):
         super().__init__()
 
         self.title(t("app.title"))
@@ -134,15 +140,27 @@ class App(ctk.CTk):
         self.audio_playback = AudioPlaybackService(
             schedule_in_main_thread=lambda ms, cb: self.after(int(ms), cb)
         )
+        self.mic_record = MicRecordService()
         self.full_results = []
         self.current_file = None
         self.current_session_path = None  # путь к открытому/сохранённому .wiproject
+        self.current_project_dir = None  # папка проекта (для нового проекта или папка с .wiproject)
         self._session_dirty = False  # были ли изменения после последнего сохранения
         self.current_glossary_path = None
         self.current_glossary = None  # GlossaryData or None
 
+        if project_dir and os.path.isdir(project_dir):
+            self.current_project_dir = os.path.abspath(project_dir)
+        if open_session_path and os.path.isfile(open_session_path):
+            self.current_project_dir = os.path.dirname(os.path.abspath(open_session_path))
+
         self._setup_ui()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        if open_session_path:
+            self._open_session_with_path(open_session_path)
+        if self.current_project_dir and not self.current_session_path:
+            self._update_session_title()
 
         # Close splash screen if it's running
         if pyi_splash:
@@ -161,7 +179,8 @@ class App(ctk.CTk):
         _icon_font = ctk.CTkFont(size=20)
         self.top_frame = ctk.CTkFrame(self)
         self.top_frame.grid(row=0, column=0, padx=20, pady=(10, 6), sticky="ew")
-        self.top_frame.grid_columnconfigure(5, weight=1)
+        self.top_frame.grid_columnconfigure(6, weight=1)
+        self.top_frame.grid_rowconfigure(1, weight=0)
 
         self.btn_open_session = ctk.CTkButton(
             self.top_frame, text="\U0001F4C2", width=40, height=32, font=_icon_font,
@@ -192,6 +211,29 @@ class App(ctk.CTk):
             command=self._stop_transcription, state="disabled", fg_color="red", hover_color="darkred",
         )
         self.btn_stop.grid(row=0, column=4, padx=(4, 10), pady=10)
+
+        self.btn_mic_record = ctk.CTkButton(
+            self.top_frame, text="\U0001f3a4", width=40, height=32, font=_icon_font,
+            command=self._open_mic_choice_dialog,
+        )
+        self.btn_mic_record.grid(row=0, column=5, padx=(0, 10), pady=10)
+        self._bind_tooltip(self.btn_mic_record, "import.mic_record_tooltip")
+
+        # YouTube: URL entry + Load button (row 1)
+        self._youtube_frame = ctk.CTkFrame(self.top_frame, fg_color="transparent")
+        self._youtube_frame.grid(row=1, column=0, columnspan=7, sticky="ew", padx=(10, 10), pady=(0, 8))
+        self._youtube_frame.grid_columnconfigure(1, weight=1)
+        self._youtube_entry = ctk.CTkEntry(
+            self._youtube_frame, placeholder_text=t("import.youtube_placeholder"), width=280,
+        )
+        self._youtube_entry.grid(row=0, column=0, padx=(0, 6), pady=4, sticky="ew")
+        self._youtube_entry.bind("<Control-KeyPress>", self._youtube_entry_paste_by_keycode)
+        self.btn_youtube_load = ctk.CTkButton(
+            self._youtube_frame, text=t("import.load_youtube"), width=100,
+            command=self._load_from_youtube,
+        )
+        self.btn_youtube_load.grid(row=0, column=1, padx=0, pady=4, sticky="w")
+        self._bind_tooltip(self.btn_youtube_load, "import.load_youtube_tooltip")
 
         self._bind_tooltip(self.btn_open_session, "session.open_project")
         self._bind_tooltip(self.btn_save_session, "session.save_project")
@@ -679,10 +721,7 @@ class App(ctk.CTk):
 
     def _refresh_ui(self):
         """Обновить все переводимые надписи интерфейса после смены языка."""
-        if self.current_session_path:
-            self.title(os.path.basename(self.current_session_path))
-        else:
-            self.title(t("app.title"))
+        self._update_session_title()
         if not self.current_file:
             self.lbl_file.configure(text=t("top.no_file_formats"))
         self.btn_export_txt.configure(text=t("export.txt"))
@@ -968,13 +1007,37 @@ class App(ctk.CTk):
             path = self.current_session_path
         if not path:
             suggested = os.path.splitext(os.path.basename(self.current_file))[0] + ".wiproject"
+            initialdir = self.current_project_dir if self.current_project_dir else None
             path = filedialog.asksaveasfilename(
                 defaultextension=".wiproject",
                 initialfile=suggested,
+                initialdir=initialdir,
                 filetypes=[("Whisper project", "*.wiproject"), ("All files", "*.*")]
             )
         if not path:
             return False
+        # If audio is outside project dir (e.g. temp from YouTube/mic), copy into project folder
+        project_dir = os.path.dirname(os.path.abspath(path))
+        current_abs = os.path.abspath(self.current_file)
+        try:
+            current_in_project = os.path.commonpath([project_dir, current_abs]) == project_dir
+        except ValueError:
+            current_in_project = False  # different drives on Windows
+        if not current_in_project:
+            dest_name = os.path.basename(self.current_file)
+            dest_path = os.path.join(project_dir, dest_name)
+            if os.path.exists(dest_path) and os.path.abspath(dest_path) != current_abs:
+                base, ext = os.path.splitext(dest_name)
+                for i in range(1, 1000):
+                    dest_path = os.path.join(project_dir, f"{base}_{i}{ext}")
+                    if not os.path.exists(dest_path):
+                        break
+            try:
+                shutil.copy2(self.current_file, dest_path)
+                self.current_file = dest_path
+            except Exception as e:
+                messagebox.showerror("Error", f"Could not copy audio to project folder: {e}")
+                return False
         transcript_for_save = [
             {"start": s["start"], "end": s["end"], "text": s["text"]}
             for s in self.full_results
@@ -995,12 +1058,17 @@ class App(ctk.CTk):
         return False
 
     def _open_session(self):
+        initialdir = self.current_project_dir if self.current_project_dir else None
         path = filedialog.askopenfilename(
-            title="Open project session",
+            title=t("start.open_project"),
+            initialdir=initialdir,
             filetypes=[("Whisper project", "*.wiproject"), ("All files", "*.*")]
         )
         if not path:
             return
+        self._open_session_with_path(path)
+
+    def _open_session_with_path(self, path: str):
         session = SessionService.load_session(path)
         if not session:
             messagebox.showerror("Error", "Failed to load session or invalid file.")
@@ -1023,6 +1091,7 @@ class App(ctk.CTk):
             self.btn_save_session.configure(state="normal")
             self.btn_ollama.configure(state="normal")
         self.current_session_path = path
+        self.current_project_dir = os.path.dirname(os.path.abspath(path))
         self._session_dirty = False
         self._update_session_title()
         self.current_glossary_path = session.glossary_path
@@ -1165,9 +1234,11 @@ class App(ctk.CTk):
         refresh_list()
 
     def _update_session_title(self):
-        """Обновляет заголовок окна: имя проекта при открытом проекте, иначе — название приложения."""
+        """Обновляет заголовок окна: имя файла проекта, папка проекта или название приложения."""
         if self.current_session_path:
             self.title(os.path.basename(self.current_session_path))
+        elif self.current_project_dir:
+            self.title(f"{os.path.basename(self.current_project_dir)} — {t('app.title')}")
         else:
             self.title(t("app.title"))
 
@@ -1180,6 +1251,359 @@ class App(ctk.CTk):
             self.current_file = file_path
             self.lbl_file.configure(text=os.path.basename(file_path))
 
+    def _youtube_entry_paste_by_keycode(self, event):
+        """Paste from clipboard on Ctrl+V by keycode so it works with any keyboard layout."""
+        if event.keycode != 86:
+            return
+        if not (event.state & 0x4):
+            return
+        try:
+            text = self.clipboard_get()
+        except Exception:
+            return
+        if not text:
+            return
+        ent = self._youtube_entry
+        try:
+            ent.delete("sel.first", "sel.last")
+        except Exception:
+            pass
+        ent.insert("insert", text)
+        return "break"
+
+    def _load_from_youtube(self):
+        url = (self._youtube_entry.get() or "").strip()
+        if not url:
+            messagebox.showwarning("YouTube", t("import.youtube_url_required"))
+            return
+        if not YouTubeDownloadService.is_youtube_url(url):
+            messagebox.showwarning("YouTube", t("import.youtube_invalid_url"))
+            return
+        self.btn_youtube_load.configure(state="disabled")
+        self._youtube_entry.configure(state="disabled")
+        self.lbl_file.configure(text=t("import.youtube_downloading"))
+        self.progress_bar.set(0)
+
+        def run():
+            def progress(pct: Optional[float], status: str) -> None:
+                if pct is not None:
+                    self.after(0, lambda: self.progress_bar.set(pct))
+                self.after(0, lambda: self.lbl_file.configure(
+                    text=t("import.youtube_downloading") + (f" {int((pct or 0) * 100)}%" if pct is not None else "")
+                ))
+
+            output_dir = self.current_project_dir if self.current_project_dir else None
+            path, err = YouTubeDownloadService.download_audio(url, output_dir=output_dir, progress_callback=progress)
+            def done():
+                self._youtube_entry.configure(state="normal")
+                self.btn_youtube_load.configure(state="normal")
+                if err:
+                    self.lbl_file.configure(text=t("top.no_file_formats"))
+                    self.progress_bar.set(0)
+                    messagebox.showerror("YouTube", err)
+                    return
+                self.current_file = path
+                self.lbl_file.configure(text=os.path.basename(path))
+                self.progress_bar.set(1.0)
+            self.after(0, done)
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def _open_mic_choice_dialog(self):
+        """Show choice: normal recording or streaming (record + live transcription)."""
+        if not self.mic_record.is_available():
+            messagebox.showwarning(
+                "Microphone",
+                t("import.mic_install_hint"),
+            )
+            return
+        choice_dlg = Toplevel(self)
+        choice_dlg.title(t("import.mic_record_dialog_title"))
+        choice_dlg.geometry("360x120")
+        choice_dlg.transient(self)
+        choice_dlg.grab_set()
+        lbl = ctk.CTkLabel(choice_dlg, text=t("mic.choose_mode"), font=ctk.CTkFont(size=12))
+        lbl.pack(pady=(16, 12))
+        btn_f = ctk.CTkFrame(choice_dlg, fg_color="transparent")
+        btn_f.pack(pady=4)
+        btn_normal = ctk.CTkButton(btn_f, text=t("mic.mode_normal"), width=160, command=lambda: _pick(False))
+        btn_normal.pack(side="left", padx=8)
+        btn_stream = ctk.CTkButton(btn_f, text=t("mic.mode_streaming"), width=160, command=lambda: _pick(True))
+        btn_stream.pack(side="left", padx=8)
+        chosen = [None]
+        def _pick(streaming: bool):
+            chosen[0] = streaming
+            choice_dlg.grab_release()
+            choice_dlg.destroy()
+        def _on_close():
+            choice_dlg.grab_release()
+            choice_dlg.destroy()
+        choice_dlg.protocol("WM_DELETE_WINDOW", _on_close)
+        choice_dlg.wait_window()
+        if chosen[0] is True:
+            self._open_mic_streaming_dialog()
+        elif chosen[0] is False:
+            self._open_mic_record_dialog()
+
+    def _open_mic_record_dialog(self):
+        if not self.mic_record.is_available():
+            messagebox.showwarning(
+                "Microphone",
+                t("import.mic_install_hint"),
+            )
+            return
+        dlg = Toplevel(self)
+        dlg.title(t("import.mic_record_dialog_title"))
+        dlg.geometry("320x140")
+        dlg.transient(self)
+        dlg.grab_set()
+        timer_label = ctk.CTkLabel(dlg, text="00:00", font=ctk.CTkFont(size=28))
+        timer_label.pack(pady=(16, 8))
+        btn_frame = ctk.CTkFrame(dlg, fg_color="transparent")
+        btn_frame.pack(pady=8)
+        start_btn = ctk.CTkButton(btn_frame, text=t("import.mic_start"), width=100, command=lambda: None)
+        stop_btn = ctk.CTkButton(btn_frame, text=t("import.mic_stop"), width=100, state="disabled", command=lambda: None)
+        start_btn.pack(side="left", padx=8)
+        stop_btn.pack(side="left", padx=8)
+        elapsed = [0.0]
+        timer_job = [None]
+
+        def update_timer():
+            elapsed[0] += 1.0
+            m = int(elapsed[0]) // 60
+            s = int(elapsed[0]) % 60
+            timer_label.configure(text=f"{m:02d}:{s:02d}")
+            if self.mic_record.is_recording():
+                timer_job[0] = dlg.after(1000, update_timer)
+
+        def on_start():
+            err = self.mic_record.start_recording()
+            if err:
+                messagebox.showerror("Microphone", err)
+                return
+            elapsed[0] = 0.0
+            timer_label.configure(text="00:00")
+            start_btn.configure(state="disabled")
+            stop_btn.configure(state="normal")
+            timer_job[0] = dlg.after(1000, update_timer)
+
+        def on_stop():
+            if timer_job[0]:
+                dlg.after_cancel(timer_job[0])
+                timer_job[0] = None
+            output_dir = self.current_project_dir if self.current_project_dir else None
+            path, err = self.mic_record.stop_and_save(output_dir=output_dir)
+            start_btn.configure(state="normal")
+            stop_btn.configure(state="disabled")
+            dlg.grab_release()
+            dlg.destroy()
+            if err:
+                messagebox.showerror("Microphone", err)
+                return
+            self.current_file = path
+            self.lbl_file.configure(text=os.path.basename(path))
+
+        def on_closing():
+            if self.mic_record.is_recording():
+                on_stop()
+            else:
+                dlg.grab_release()
+                dlg.destroy()
+
+        start_btn.configure(command=on_start)
+        stop_btn.configure(command=on_stop)
+        dlg.protocol("WM_DELETE_WINDOW", on_closing)
+
+    # Interval (seconds) for streaming mic: take chunks and transcribe
+    _STREAMING_CHUNK_INTERVAL_SEC = 4
+
+    def _open_mic_streaming_dialog(self):
+        """Streaming mode: record and transcribe in chunks, show live text. On stop, save full WAV to project."""
+        if not self.mic_record.is_available():
+            messagebox.showwarning("Microphone", t("import.mic_install_hint"))
+            return
+        try:
+            import soundfile as sf
+        except ImportError:
+            messagebox.showwarning("Microphone", "soundfile required for streaming. pip install soundfile")
+            return
+        output_dir = self.current_project_dir if self.current_project_dir else tempfile.gettempdir()
+        dlg = Toplevel(self)
+        dlg.title(t("mic.mode_streaming"))
+        dlg.geometry("520x320")
+        dlg.transient(self)
+        dlg.grab_set()
+        status_lbl = ctk.CTkLabel(dlg, text=t("mic.loading_model"), font=ctk.CTkFont(size=12))
+        status_lbl.pack(pady=(12, 4))
+        use_glossary_var = ctk.BooleanVar(value=False)
+        use_glossary_cb = ctk.CTkCheckBox(dlg, text=t("mic.use_glossary"), variable=use_glossary_var)
+        use_glossary_cb.pack(pady=2)
+        timer_lbl = ctk.CTkLabel(dlg, text="00:00", font=ctk.CTkFont(size=24))
+        timer_lbl.pack(pady=4)
+        txt_live = ctk.CTkTextbox(dlg, height=140, font=ctk.CTkFont(size=11))
+        txt_live.pack(pady=8, padx=12, fill="both", expand=True)
+        stop_btn = ctk.CTkButton(dlg, text=t("import.mic_stop"), width=120, fg_color="red", hover_color="darkred", command=lambda: None)
+        stop_btn.pack(pady=8)
+        stream_results = []
+        cumulative_offset = [0.0]
+        stop_flag = []
+        dlg_closed = [False]
+        worker_done = threading.Event()
+        timer_job = [None]
+        elapsed = [0.0]
+
+        def update_timer():
+            try:
+                if not dlg.winfo_exists():
+                    return
+            except Exception:
+                return
+            if dlg_closed[0]:
+                return
+            elapsed[0] += 1.0
+            m, s = int(elapsed[0]) // 60, int(elapsed[0]) % 60
+            try:
+                timer_lbl.configure(text=f"{m:02d}:{s:02d}")
+            except Exception:
+                return
+            if not stop_flag and self.mic_record.is_recording() and not dlg_closed[0]:
+                try:
+                    timer_job[0] = self.after(1000, update_timer)
+                except Exception:
+                    pass
+
+        def worker():
+            try:
+                model_size = self._settings_model_value
+                device = self._device_var.get().strip().lower() or "cuda"
+                if device == "auto":
+                    device = "cuda"
+                compute_type = self._compute_var.get().strip().lower() or "float16"
+                if not self.service.load_model(model_size=model_size, device=device, compute_type=compute_type):
+                    self.after(0, lambda: messagebox.showerror("Microphone", "Failed to load model."))
+                    return
+                def safe_status(text):
+                    try:
+                        if not dlg.winfo_exists():
+                            return
+                    except Exception:
+                        return
+                    if dlg_closed[0]:
+                        return
+                    try:
+                        status_lbl.configure(text=text)
+                    except Exception:
+                        pass
+                self.after(0, lambda: safe_status(t("mic.recording_streaming")))
+                err = self.mic_record.start_recording()
+                if err:
+                    self.after(0, lambda: messagebox.showerror("Microphone", err))
+                    return
+                def safe_timer_start():
+                    try:
+                        if not dlg.winfo_exists():
+                            return
+                    except Exception:
+                        return
+                    if dlg_closed[0]:
+                        return
+                    try:
+                        timer_job[0] = self.after(1000, update_timer)
+                    except Exception:
+                        pass
+                self.after(0, safe_timer_start)
+                language = language_display_to_code(self._settings_language_value)
+                beam_size = int(self._settings_beam_size.get()) if hasattr(self, "_settings_beam_size") else 5
+                vad_filter = self._settings_vad.get() if hasattr(self, "_settings_vad") else True
+                task = self._task_var.get().strip() or "transcribe"
+                word_ts = self._settings_word_ts.get() if hasattr(self, "_settings_word_ts") else False
+                use_glossary = use_glossary_var.get() and bool(self.current_glossary)
+                initial_prompt = GlossaryService.get_initial_prompt_text(self.current_glossary) if use_glossary else None
+                interval = self._STREAMING_CHUNK_INTERVAL_SEC
+                while len(stop_flag) == 0:
+                    time.sleep(interval)
+                    if len(stop_flag) > 0:
+                        break
+                    data = self.mic_record.take_accumulated_chunks()
+                    if data is None or len(data) == 0:
+                        continue
+                    tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+                    try:
+                        sf.write(tmp.name, data, self.mic_record.sample_rate)
+                        segs, info = self.service.transcribe(
+                            tmp.name,
+                            language=language,
+                            initial_prompt=initial_prompt,
+                            beam_size=beam_size,
+                            vad_filter=vad_filter,
+                            task=task,
+                            word_timestamps=word_ts,
+                        )
+                        duration = getattr(info, "duration", 0) or 0
+                        offset = cumulative_offset[0]
+                        for s in (segs or []):
+                            stream_results.append({
+                                "start": s.get("start", 0) + offset,
+                                "end": s.get("end", 0) + offset,
+                                "text": s.get("text", ""),
+                            })
+                        cumulative_offset[0] += duration
+                        text_bit = " ".join((s.get("text") or "").strip() for s in (segs or []))
+                        if text_bit:
+                            def safe_append(bit):
+                                try:
+                                    if not dlg.winfo_exists():
+                                        return
+                                except Exception:
+                                    return
+                                if dlg_closed[0]:
+                                    return
+                                try:
+                                    txt_live.insert("end", bit + " ")
+                                    txt_live.see("end")
+                                except Exception:
+                                    pass
+                            self.after(0, lambda t=text_bit: safe_append(t))
+                    finally:
+                        try:
+                            os.unlink(tmp.name)
+                        except Exception:
+                            pass
+            except Exception as e:
+                self.after(0, lambda: messagebox.showerror("Microphone", str(e)))
+            finally:
+                worker_done.set()
+
+        def on_stop():
+            dlg_closed[0] = True
+            stop_flag.append(True)
+            worker_done.wait(timeout=10.0)
+            if timer_job[0] is not None:
+                try:
+                    self.after_cancel(timer_job[0])
+                    timer_job[0] = None
+                except Exception:
+                    pass
+            path, err = self.mic_record.stop_and_save(output_dir=output_dir)
+            dlg.grab_release()
+            dlg.destroy()
+            if err:
+                messagebox.showerror("Microphone", err)
+                return
+            self.current_file = path
+            self.lbl_file.configure(text=os.path.basename(path))
+            self.full_results = list(stream_results)
+            self._session_dirty = True
+            self._show_segment_editor()
+            self._rebuild_segment_list()
+            self.btn_export_txt.configure(state="normal")
+            self.btn_save_session.configure(state="normal")
+            self.btn_ollama.configure(state="normal")
+
+        stop_btn.configure(command=on_stop)
+        dlg.protocol("WM_DELETE_WINDOW", on_stop)
+        threading.Thread(target=worker, daemon=True).start()
+
     def _start_transcription(self):
         if not self.current_file:
             messagebox.showwarning("Warning", "Please select a file first!")
@@ -1190,6 +1614,8 @@ class App(ctk.CTk):
         self.btn_start.configure(state="disabled")
         self.btn_stop.configure(state="normal")
         self.btn_browse.configure(state="disabled")
+        self.btn_youtube_load.configure(state="disabled")
+        self.btn_mic_record.configure(state="disabled")
         self.btn_export_txt.configure(state="disabled")
         self.btn_save_session.configure(state="disabled")
         self.btn_ollama.configure(state="disabled")
@@ -1256,6 +1682,8 @@ class App(ctk.CTk):
         self.after(0, lambda: self.btn_start.configure(state="normal"))
         self.after(0, lambda: self.btn_stop.configure(state="disabled"))
         self.after(0, lambda: self.btn_browse.configure(state="normal"))
+        self.after(0, lambda: self.btn_youtube_load.configure(state="normal"))
+        self.after(0, lambda: self.btn_mic_record.configure(state="normal"))
         if self.full_results:
             self._session_dirty = True
             self.after(0, lambda: self.btn_export_txt.configure(state="normal"))
@@ -1412,12 +1840,70 @@ class App(ctk.CTk):
             else:
                 messagebox.showerror("Error", "Failed to save TXT file.")
 
+def _run_start_window():
+    """Показать окно выбора: Открыть проект или Создать проект. Возвращает (open_session_path, project_dir).
+    Перед destroy() отменяем все запланированные after-callback'и через Tcl, чтобы не было 'invalid command name'."""
+    root = ctk.CTk()
+    root.title(t("app.title"))
+    root.geometry("420x200")
+    root.resizable(False, False)
+    choice = {"open": None, "project_dir": None}
+
+    def on_open():
+        path = filedialog.askopenfilename(
+            title=t("start.open_project"),
+            filetypes=[("Whisper project", "*.wiproject"), ("All files", "*.*")]
+        )
+        if path:
+            choice["open"] = path
+            root.quit()
+
+    def on_create():
+        dir_path = filedialog.askdirectory(title=t("start.create_project_choose_folder"))
+        if dir_path:
+            choice["project_dir"] = os.path.abspath(dir_path)
+            root.quit()
+
+    def _cleanup_and_destroy():
+        try:
+            ids = root.tk.eval("after info")
+            for job_id in ids.split():
+                try:
+                    root.after_cancel(job_id)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        root.destroy()
+
+    root.grid_columnconfigure(0, weight=1)
+    root.grid_rowconfigure(1, weight=1)
+    lbl = ctk.CTkLabel(root, text=t("start.choose_action"), font=ctk.CTkFont(size=14))
+    lbl.grid(row=0, column=0, pady=(24, 16))
+    btn_frame = ctk.CTkFrame(root, fg_color="transparent")
+    btn_frame.grid(row=1, column=0, pady=8)
+    btn_frame.grid_columnconfigure(0, weight=1)
+    btn_frame.grid_columnconfigure(1, weight=1)
+    btn_open = ctk.CTkButton(btn_frame, text=t("start.open_project"), width=180, height=44, command=on_open)
+    btn_open.grid(row=0, column=0, padx=12, pady=8)
+    btn_create = ctk.CTkButton(btn_frame, text=t("start.create_project"), width=180, height=44, command=on_create)
+    btn_create.grid(row=0, column=1, padx=12, pady=8)
+    root.protocol("WM_DELETE_WINDOW", root.quit)
+    root.mainloop()
+    _cleanup_and_destroy()
+    return choice.get("open"), choice.get("project_dir")
+
+
 if __name__ == "__main__":
     saved = load_locale_preference()
     if saved:
         set_locale(saved)
     try:
-        app = App()
+        open_path, project_dir = _run_start_window()
+        if open_path is None and project_dir is None:
+            import sys
+            sys.exit(0)
+        app = App(open_session_path=open_path, project_dir=project_dir)
         app.mainloop()
     except Exception as e:
         import traceback

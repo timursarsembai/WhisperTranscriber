@@ -44,6 +44,14 @@ def build():
         # Add DLLs
         f"--add-binary={cublas_bin}/*.dll{os.pathsep}nvidia/cublas/bin",
         f"--add-binary={cudnn_bin}/*.dll{os.pathsep}nvidia/cudnn/bin",
+        # Optional: YouTube import (bundled so EXE can use it)
+        "--hidden-import=yt_dlp",
+        # FFmpeg from imageio-ffmpeg (for yt-dlp post-processing, no PATH needed)
+        "--hidden-import=imageio_ffmpeg",
+        "--collect-data=imageio_ffmpeg",
+        # Optional: Microphone recording
+        "--hidden-import=sounddevice",
+        "--hidden-import=soundfile",
         # Main file
         "main.py"
     ]
