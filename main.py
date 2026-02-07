@@ -245,10 +245,11 @@ class App(ctk.CTk):
         self.grid_columnconfigure(1, weight=1)
         self.grid_columnconfigure(2, weight=0)
         self.grid_rowconfigure(3, weight=1)
+        self.grid_rowconfigure(5, weight=0)
 
         # --- Левая панель: список файлов проекта ---
         self._left_panel = ctk.CTkFrame(self, width=self._left_panel_width, fg_color=("gray90", "gray18"))
-        self._left_panel.grid(row=0, column=0, rowspan=5, padx=(20, 0), pady=(0, 20), sticky="nsew")
+        self._left_panel.grid(row=0, column=0, rowspan=6, padx=(20, 0), pady=(0, 20), sticky="nsew")
         self._left_panel.grid_propagate(False)
         self._left_panel.grid_columnconfigure(0, weight=1)
         self._left_panel.grid_rowconfigure(1, weight=1)
@@ -264,7 +265,7 @@ class App(ctk.CTk):
         _icon_font = ctk.CTkFont(size=20)
         self.top_frame = ctk.CTkFrame(self)
         self.top_frame.grid(row=0, column=1, padx=20, pady=(10, 6), sticky="ew")
-        self.top_frame.grid_columnconfigure(6, weight=1)
+        self.top_frame.grid_columnconfigure(7, weight=1)
         self.top_frame.grid_rowconfigure(1, weight=0)
 
         self.btn_open_session = ctk.CTkButton(
@@ -297,16 +298,22 @@ class App(ctk.CTk):
         )
         self.btn_stop.grid(row=0, column=4, padx=(4, 10), pady=10)
 
-        self.btn_mic_record = ctk.CTkButton(
+        self.btn_mic_normal = ctk.CTkButton(
             self.top_frame, text="\U0001f3a4", width=40, height=32, font=_icon_font,
-            command=self._open_mic_choice_dialog,
+            command=self._show_mic_normal_panel,
         )
-        self.btn_mic_record.grid(row=0, column=5, padx=(0, 10), pady=10)
-        self._bind_tooltip(self.btn_mic_record, "import.mic_record_tooltip")
+        self.btn_mic_normal.grid(row=0, column=5, padx=(0, 4), pady=10)
+        self._bind_tooltip(self.btn_mic_normal, "mic.mode_normal")
+        self.btn_mic_streaming = ctk.CTkButton(
+            self.top_frame, text="\u23fa", width=40, height=32, font=_icon_font,
+            command=self._show_mic_streaming_panel,
+        )
+        self.btn_mic_streaming.grid(row=0, column=6, padx=(0, 10), pady=10)
+        self._bind_tooltip(self.btn_mic_streaming, "mic.mode_streaming")
 
         # YouTube: URL entry + Load button (row 1)
         self._youtube_frame = ctk.CTkFrame(self.top_frame, fg_color="transparent")
-        self._youtube_frame.grid(row=1, column=0, columnspan=7, sticky="ew", padx=(10, 10), pady=(0, 8))
+        self._youtube_frame.grid(row=1, column=0, columnspan=8, sticky="ew", padx=(10, 10), pady=(0, 8))
         self._youtube_frame.grid_columnconfigure(1, weight=1)
         self._youtube_entry = ctk.CTkEntry(
             self._youtube_frame, placeholder_text=t("import.youtube_placeholder"), width=280,
@@ -353,10 +360,71 @@ class App(ctk.CTk):
         self._segment_scroll.grid_columnconfigure(0, weight=1)
         self._segment_scroll.grid_remove()  # по умолчанию показываем txt_output (пустой)
 
+        # Панель записи с микрофона (обычная и потоковая) — под редактором, над кнопками экспорта
+        self._recording_panel_container = ctk.CTkFrame(self, fg_color=("gray92", "gray22"), corner_radius=6)
+        self._recording_panel_container.grid(row=4, column=1, padx=20, pady=(0, 8), sticky="ew")
+        self._recording_panel_container.grid_remove()  # показываем только при выборе режима
+        self._recording_panel_container.grid_columnconfigure(0, weight=1)
+        self._mic_normal_panel = ctk.CTkFrame(self._recording_panel_container, fg_color="transparent")
+        self._mic_normal_panel.grid(row=0, column=0, sticky="ew", padx=12, pady=10)
+        self._mic_normal_panel.grid_columnconfigure(0, weight=1)
+        self._mic_streaming_panel = ctk.CTkFrame(self._recording_panel_container, fg_color="transparent")
+        self._mic_streaming_panel.grid(row=0, column=0, sticky="nsew", padx=12, pady=10)
+        self._mic_streaming_panel.grid_columnconfigure(0, weight=1)
+        self._mic_streaming_panel.grid_rowconfigure(3, weight=1)
+        self._mic_normal_panel_visible = False
+        self._mic_streaming_panel_visible = False
+        # Обычная запись: одна строка — [Старт][Стоп] | таймер | осциллограф на всю ширину
+        self._mic_normal_panel.grid_columnconfigure(2, weight=1)
+        _mic_btn_row = ctk.CTkFrame(self._mic_normal_panel, fg_color="transparent")
+        _mic_btn_row.grid(row=0, column=0, padx=(0, 12), pady=8, sticky="w")
+        self._mic_normal_start_btn = ctk.CTkButton(_mic_btn_row, text=t("import.mic_start"), width=100, command=self._on_mic_normal_start)
+        self._mic_normal_start_btn.pack(side="left", padx=(0, 4))
+        self._mic_normal_stop_btn = ctk.CTkButton(_mic_btn_row, text=t("import.mic_stop"), width=100, state="disabled", command=self._on_mic_normal_stop)
+        self._mic_normal_stop_btn.pack(side="left")
+        self._mic_normal_timer = ctk.CTkLabel(self._mic_normal_panel, text="00:00", font=ctk.CTkFont(size=22))
+        self._mic_normal_timer.grid(row=0, column=1, padx=(0, 12), pady=8, sticky="w")
+        self._mic_normal_waveform_f = ctk.CTkFrame(self._mic_normal_panel, fg_color=("gray85", "gray28"), height=48)
+        self._mic_normal_waveform_f.grid(row=0, column=2, pady=8, sticky="ew")
+        self._mic_normal_waveform_f.grid_propagate(False)
+        self._waveform_canvas_normal = Canvas(
+            self._mic_normal_waveform_f, width=360, height=48,
+            bg="#3d3d3d", highlightthickness=0,
+        )
+        self._waveform_canvas_normal.pack(fill="both", expand=True)
+        self._mic_normal_timer_job = None
+        self._mic_normal_elapsed = [0.0]
+        # Потоковая запись: статус, глоссарий; строка [Старт][Стоп] | таймер | осциллограф; текст
+        self._mic_streaming_panel.grid_columnconfigure(2, weight=1)
+        self._mic_streaming_panel.grid_rowconfigure(3, weight=1)
+        self._mic_streaming_status = ctk.CTkLabel(self._mic_streaming_panel, text="", font=ctk.CTkFont(size=12))
+        self._mic_streaming_status.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 2))
+        self._mic_streaming_use_glossary_var = ctk.BooleanVar(value=False)
+        self._mic_streaming_glossary_cb = ctk.CTkCheckBox(self._mic_streaming_panel, text=t("mic.use_glossary"), variable=self._mic_streaming_use_glossary_var)
+        self._mic_streaming_glossary_cb.grid(row=1, column=0, columnspan=3, sticky="w", pady=2)
+        _mic_stream_btn_row = ctk.CTkFrame(self._mic_streaming_panel, fg_color="transparent")
+        _mic_stream_btn_row.grid(row=2, column=0, padx=(0, 12), pady=4, sticky="w")
+        self._mic_streaming_start_btn = ctk.CTkButton(_mic_stream_btn_row, text=t("import.mic_start"), width=100, command=self._on_mic_streaming_start)
+        self._mic_streaming_start_btn.pack(side="left", padx=(0, 4))
+        self._mic_streaming_stop_btn = ctk.CTkButton(_mic_stream_btn_row, text=t("import.mic_stop"), width=100, state="disabled", fg_color="red", hover_color="darkred", command=self._on_mic_streaming_stop)
+        self._mic_streaming_stop_btn.pack(side="left")
+        self._mic_streaming_timer = ctk.CTkLabel(self._mic_streaming_panel, text="00:00", font=ctk.CTkFont(size=20))
+        self._mic_streaming_timer.grid(row=2, column=1, padx=(0, 12), pady=4, sticky="w")
+        self._mic_streaming_waveform_f = ctk.CTkFrame(self._mic_streaming_panel, fg_color=("gray85", "gray28"), height=48)
+        self._mic_streaming_waveform_f.grid(row=2, column=2, pady=4, sticky="ew")
+        self._mic_streaming_waveform_f.grid_propagate(False)
+        self._waveform_canvas_streaming = Canvas(
+            self._mic_streaming_waveform_f, width=360, height=48,
+            bg="#3d3d3d", highlightthickness=0,
+        )
+        self._waveform_canvas_streaming.pack(fill="both", expand=True)
+        self._mic_streaming_text = ctk.CTkTextbox(self._mic_streaming_panel, height=100, font=ctk.CTkFont(size=11))
+        self._mic_streaming_text.grid(row=3, column=0, columnspan=3, sticky="nsew", pady=4)
+
         # Правая панель: своя разметка — кнопки вкладок вверху, контент сразу под ними (без CTkTabview). По умолчанию видна.
         self.settings_panel_visible = True
         self._right_panel = ctk.CTkFrame(self, width=self._right_panel_width, fg_color=("gray85", "gray20"))
-        self._right_panel.grid(row=0, column=2, rowspan=5, padx=(0, 20), pady=(0, 20), sticky="nsew")
+        self._right_panel.grid(row=0, column=2, rowspan=6, padx=(0, 20), pady=(0, 20), sticky="nsew")
         self.grid_columnconfigure(2, minsize=self._right_panel_width)
         self._right_panel.grid_propagate(False)
         self._right_panel.grid_columnconfigure(0, weight=1)
@@ -400,7 +468,7 @@ class App(ctk.CTk):
 
         # Bottom panel: Export, Ollama, справа — Настройки
         self.export_frame = ctk.CTkFrame(self)
-        self.export_frame.grid(row=4, column=1, padx=20, pady=(0, 20), sticky="ew")
+        self.export_frame.grid(row=5, column=1, padx=20, pady=(0, 20), sticky="ew")
         self.export_frame.grid_columnconfigure(2, weight=1)
         self.btn_export_txt = ctk.CTkButton(self.export_frame, text=t("export.txt"), command=self._export_txt, state="disabled")
         self.btn_export_txt.grid(row=0, column=0, padx=10, pady=10)
@@ -898,6 +966,15 @@ class App(ctk.CTk):
             self.lbl_file.configure(text=t("top.no_file_formats"))
         self.btn_export_txt.configure(text=t("export.txt"))
         self.btn_ollama.configure(text=t("export.ollama"))
+        if hasattr(self, "_mic_normal_start_btn"):
+            self._mic_normal_start_btn.configure(text=t("import.mic_start"))
+            self._mic_normal_stop_btn.configure(text=t("import.mic_stop"))
+        if hasattr(self, "_mic_streaming_glossary_cb"):
+            self._mic_streaming_glossary_cb.configure(text=t("mic.use_glossary"))
+        if hasattr(self, "_mic_streaming_start_btn"):
+            self._mic_streaming_start_btn.configure(text=t("import.mic_start"))
+        if hasattr(self, "_mic_streaming_stop_btn"):
+            self._mic_streaming_stop_btn.configure(text=t("import.mic_stop"))
         self.btn_settings.configure(
             text=t("bottom.hide_settings") if self.settings_panel_visible else t("bottom.settings")
         )
@@ -1658,166 +1735,204 @@ class App(ctk.CTk):
 
         threading.Thread(target=run, daemon=True).start()
 
-    def _open_mic_choice_dialog(self):
-        """Show choice: normal recording or streaming (record + live transcription)."""
+    def _show_mic_normal_panel(self):
+        """Показать панель обычной записи; скрыть потоковую."""
         if not self.mic_record.is_available():
-            messagebox.showwarning(
-                "Microphone",
-                t("import.mic_install_hint"),
-            )
+            messagebox.showwarning("Microphone", t("import.mic_install_hint"))
             return
-        choice_dlg = Toplevel(self)
-        choice_dlg.title(t("import.mic_record_dialog_title"))
-        choice_dlg.geometry("360x120")
-        choice_dlg.transient(self)
-        choice_dlg.grab_set()
-        lbl = ctk.CTkLabel(choice_dlg, text=t("mic.choose_mode"), font=ctk.CTkFont(size=12))
-        lbl.pack(pady=(16, 12))
-        btn_f = ctk.CTkFrame(choice_dlg, fg_color="transparent")
-        btn_f.pack(pady=4)
-        btn_normal = ctk.CTkButton(btn_f, text=t("mic.mode_normal"), width=160, command=lambda: _pick(False))
-        btn_normal.pack(side="left", padx=8)
-        btn_stream = ctk.CTkButton(btn_f, text=t("mic.mode_streaming"), width=160, command=lambda: _pick(True))
-        btn_stream.pack(side="left", padx=8)
-        chosen = [None]
-        def _pick(streaming: bool):
-            chosen[0] = streaming
-            choice_dlg.grab_release()
-            choice_dlg.destroy()
-        def _on_close():
-            choice_dlg.grab_release()
-            choice_dlg.destroy()
-        choice_dlg.protocol("WM_DELETE_WINDOW", _on_close)
-        choice_dlg.wait_window()
-        if chosen[0] is True:
-            self._open_mic_streaming_dialog()
-        elif chosen[0] is False:
-            self._open_mic_record_dialog()
+        self._hide_mic_streaming_panel()
+        self._mic_normal_panel.grid(row=0, column=0, sticky="ew", padx=12, pady=10)
+        self._mic_normal_panel_visible = True
+        self._recording_panel_container.grid()
 
-    def _open_mic_record_dialog(self):
-        if not self.mic_record.is_available():
-            messagebox.showwarning(
-                "Microphone",
-                t("import.mic_install_hint"),
-            )
-            return
-        dlg = Toplevel(self)
-        dlg.title(t("import.mic_record_dialog_title"))
-        dlg.geometry("320x140")
-        dlg.transient(self)
-        dlg.grab_set()
-        timer_label = ctk.CTkLabel(dlg, text="00:00", font=ctk.CTkFont(size=28))
-        timer_label.pack(pady=(16, 8))
-        btn_frame = ctk.CTkFrame(dlg, fg_color="transparent")
-        btn_frame.pack(pady=8)
-        start_btn = ctk.CTkButton(btn_frame, text=t("import.mic_start"), width=100, command=lambda: None)
-        stop_btn = ctk.CTkButton(btn_frame, text=t("import.mic_stop"), width=100, state="disabled", command=lambda: None)
-        start_btn.pack(side="left", padx=8)
-        stop_btn.pack(side="left", padx=8)
-        elapsed = [0.0]
-        timer_job = [None]
-
-        def update_timer():
-            elapsed[0] += 1.0
-            m = int(elapsed[0]) // 60
-            s = int(elapsed[0]) % 60
-            timer_label.configure(text=f"{m:02d}:{s:02d}")
-            if self.mic_record.is_recording():
-                timer_job[0] = dlg.after(1000, update_timer)
-
-        def on_start():
-            err = self.mic_record.start_recording()
-            if err:
-                messagebox.showerror("Microphone", err)
-                return
-            elapsed[0] = 0.0
-            timer_label.configure(text="00:00")
-            start_btn.configure(state="disabled")
-            stop_btn.configure(state="normal")
-            timer_job[0] = dlg.after(1000, update_timer)
-
-        def on_stop():
-            if timer_job[0]:
-                dlg.after_cancel(timer_job[0])
-                timer_job[0] = None
-            output_dir = self.current_project_dir if self.current_project_dir else None
-            path, err = self.mic_record.stop_and_save(output_dir=output_dir)
-            start_btn.configure(state="normal")
-            stop_btn.configure(state="disabled")
-            dlg.grab_release()
-            dlg.destroy()
-            if err:
-                messagebox.showerror("Microphone", err)
-                return
-            self.current_file = path
-            self.lbl_file.configure(text=os.path.basename(path))
-
-        def on_closing():
-            if self.mic_record.is_recording():
-                on_stop()
-            else:
-                dlg.grab_release()
-                dlg.destroy()
-
-        start_btn.configure(command=on_start)
-        stop_btn.configure(command=on_stop)
-        dlg.protocol("WM_DELETE_WINDOW", on_closing)
-
-    # Interval (seconds) for streaming mic: take chunks and transcribe
-    _STREAMING_CHUNK_INTERVAL_SEC = 4
-
-    def _open_mic_streaming_dialog(self):
-        """Streaming mode: record and transcribe in chunks, show live text. On stop, save full WAV to project."""
+    def _show_mic_streaming_panel(self):
+        """Показать панель потоковой записи; скрыть обычную. Запись по кнопке Старт."""
         if not self.mic_record.is_available():
             messagebox.showwarning("Microphone", t("import.mic_install_hint"))
             return
         try:
-            import soundfile as sf
+            import soundfile as sf  # noqa: F401
         except ImportError:
             messagebox.showwarning("Microphone", "soundfile required for streaming. pip install soundfile")
             return
-        output_dir = self.current_project_dir if self.current_project_dir else tempfile.gettempdir()
-        dlg = Toplevel(self)
-        dlg.title(t("mic.mode_streaming"))
-        dlg.geometry("520x320")
-        dlg.transient(self)
-        dlg.grab_set()
-        status_lbl = ctk.CTkLabel(dlg, text=t("mic.loading_model"), font=ctk.CTkFont(size=12))
-        status_lbl.pack(pady=(12, 4))
-        use_glossary_var = ctk.BooleanVar(value=False)
-        use_glossary_cb = ctk.CTkCheckBox(dlg, text=t("mic.use_glossary"), variable=use_glossary_var)
-        use_glossary_cb.pack(pady=2)
-        timer_lbl = ctk.CTkLabel(dlg, text="00:00", font=ctk.CTkFont(size=24))
-        timer_lbl.pack(pady=4)
-        txt_live = ctk.CTkTextbox(dlg, height=140, font=ctk.CTkFont(size=11))
-        txt_live.pack(pady=8, padx=12, fill="both", expand=True)
-        stop_btn = ctk.CTkButton(dlg, text=t("import.mic_stop"), width=120, fg_color="red", hover_color="darkred", command=lambda: None)
-        stop_btn.pack(pady=8)
-        stream_results = []
-        cumulative_offset = [0.0]
-        stop_flag = []
-        dlg_closed = [False]
-        worker_done = threading.Event()
-        timer_job = [None]
-        elapsed = [0.0]
+        self._hide_mic_normal_panel()
+        self._mic_streaming_panel.grid(row=0, column=0, sticky="nsew", padx=12, pady=10)
+        self._mic_streaming_panel_visible = True
+        self._mic_streaming_status.configure(text=t("mic.press_start"))
+        self._mic_streaming_timer.configure(text="00:00")
+        self._mic_streaming_text.delete("0.0", "end")
+        self._mic_streaming_start_btn.configure(state="normal")
+        self._mic_streaming_stop_btn.configure(state="disabled")
+        self._recording_panel_container.grid()
+
+    def _hide_mic_normal_panel(self):
+        if self.mic_record.is_recording() and getattr(self, "_mic_normal_panel_visible", False):
+            self._on_mic_normal_stop()
+        self._mic_normal_panel_visible = False
+        if self._mic_normal_timer_job:
+            self.after_cancel(self._mic_normal_timer_job)
+            self._mic_normal_timer_job = None
+        self._mic_normal_panel.grid_remove()
+
+    def _hide_mic_streaming_panel(self):
+        self._mic_streaming_panel_visible = False
+        if getattr(self, "_mic_streaming_waveform_job", None) is not None:
+            try:
+                self.after_cancel(self._mic_streaming_waveform_job)
+                self._mic_streaming_waveform_job = None
+            except Exception:
+                pass
+        if getattr(self, "_mic_streaming_stop_flag", None) is not None:
+            self._mic_streaming_stop_flag.append(True)
+            self._mic_streaming_worker_done.wait(timeout=10.0)
+            if getattr(self, "_mic_streaming_timer_job", [None])[0] is not None:
+                try:
+                    self.after_cancel(self._mic_streaming_timer_job[0])
+                    self._mic_streaming_timer_job[0] = None
+                except Exception:
+                    pass
+            output_dir = self.current_project_dir if self.current_project_dir else tempfile.gettempdir()
+            path, err = self.mic_record.stop_and_save(output_dir=output_dir)
+            if not err and path:
+                self.current_file = path
+                self.lbl_file.configure(text=os.path.basename(path))
+                self.full_results = list(getattr(self, "_mic_streaming_results", []))
+                if self.current_project_dir:
+                    rel = SessionService._make_path_relative_to_project(
+                        path, os.path.join(self.current_project_dir, "_.wiproject")
+                    )
+                    self.file_transcripts[rel] = list(self.full_results)
+                    self._refresh_project_files_list()
+                self._session_dirty = True
+                self._show_segment_editor()
+                self._rebuild_segment_list()
+                self.btn_export_txt.configure(state="normal")
+                self.btn_save_session.configure(state="normal")
+                self.btn_ollama.configure(state="normal")
+        self._mic_streaming_panel.grid_remove()
+
+    def _on_mic_normal_start(self):
+        err = self.mic_record.start_recording()
+        if err:
+            messagebox.showerror("Microphone", err)
+            return
+        self._mic_normal_elapsed[0] = 0.0
+        self._mic_normal_timer.configure(text="00:00")
+        self._mic_normal_start_btn.configure(state="disabled")
+        self._mic_normal_stop_btn.configure(state="normal")
 
         def update_timer():
-            try:
-                if not dlg.winfo_exists():
-                    return
-            except Exception:
-                return
-            if dlg_closed[0]:
-                return
-            elapsed[0] += 1.0
-            m, s = int(elapsed[0]) // 60, int(elapsed[0]) % 60
-            try:
-                timer_lbl.configure(text=f"{m:02d}:{s:02d}")
-            except Exception:
-                return
-            if not stop_flag and self.mic_record.is_recording() and not dlg_closed[0]:
+            self._mic_normal_elapsed[0] += 1.0
+            m = int(self._mic_normal_elapsed[0]) // 60
+            s = int(self._mic_normal_elapsed[0]) % 60
+            self._mic_normal_timer.configure(text=f"{m:02d}:{s:02d}")
+            if self.mic_record.is_recording():
+                self._mic_normal_timer_job = self.after(1000, update_timer)
+
+        def update_waveform():
+            if self.mic_record.is_recording():
                 try:
-                    timer_job[0] = self.after(1000, update_timer)
+                    self._draw_waveform("normal")
+                except Exception:
+                    pass
+                self._mic_normal_waveform_job = self.after(80, update_waveform)
+
+        self._mic_normal_timer_job = self.after(1000, update_timer)
+        self._mic_normal_waveform_job = self.after(80, update_waveform)
+
+    def _on_mic_normal_stop(self):
+        if self._mic_normal_timer_job:
+            self.after_cancel(self._mic_normal_timer_job)
+            self._mic_normal_timer_job = None
+        if getattr(self, "_mic_normal_waveform_job", None):
+            self.after_cancel(self._mic_normal_waveform_job)
+            self._mic_normal_waveform_job = None
+        output_dir = self.current_project_dir if self.current_project_dir else None
+        path, err = self.mic_record.stop_and_save(output_dir=output_dir)
+        self._mic_normal_start_btn.configure(state="normal")
+        self._mic_normal_stop_btn.configure(state="disabled")
+        self._mic_normal_elapsed[0] = 0.0
+        self._mic_normal_timer.configure(text="00:00")
+        if err:
+            messagebox.showerror("Microphone", err)
+            return
+        self.current_file = path
+        self.lbl_file.configure(text=os.path.basename(path))
+        if self.current_project_dir and path and os.path.normpath(os.path.dirname(path)) == os.path.normpath(os.path.abspath(self.current_project_dir)):
+            self._refresh_project_files_list()
+
+    def _draw_waveform(self, panel_kind: str):
+        """Отрисовать форму волны по последним сэмплам с микрофона (normal или streaming)."""
+        try:
+            data = self.mic_record.get_waveform_tail(max_samples=2000)
+        except Exception:
+            return
+        canvas = self._waveform_canvas_normal if panel_kind == "normal" else self._waveform_canvas_streaming
+        w = max(1, canvas.winfo_width() or 360)
+        h = max(1, canvas.winfo_height() or 48)
+        canvas.delete("all")
+        if data is None or len(data) == 0:
+            canvas.create_line(0, h // 2, w, h // 2, fill="#555555", width=1)
+            return
+        try:
+            import numpy as np
+            data = np.asarray(data).ravel()
+        except Exception:
+            return
+        n = len(data)
+        if n > 1:
+            step = max(1, n // max(1, w))
+            pts = []
+            mid = h / 2
+            amp = (h / 2) * 0.9
+            gain = 90.0
+            for i in range(0, n, step):
+                x = (i / n) * w
+                s = float(data[i])
+                s = max(-1.0, min(1.0, s * gain))
+                y = mid - s * amp
+                pts.append((x, y))
+            if len(pts) >= 2:
+                for j in range(len(pts) - 1):
+                    canvas.create_line(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1], fill="#4fc3f7", width=1)
+        else:
+            canvas.create_line(0, h // 2, w, h // 2, fill="#555555", width=1)
+
+    def _on_mic_streaming_start(self):
+        """По нажатию Старт в потоковой записи: загрузка модели и старт записи."""
+        self._mic_streaming_status.configure(text=t("mic.loading_model"))
+        self._mic_streaming_start_btn.configure(state="disabled")
+        self._mic_streaming_stop_btn.configure(state="normal")
+        self._mic_streaming_stop_flag = []
+        self._mic_streaming_worker_done = threading.Event()
+        self._start_mic_streaming_worker()
+
+    # Interval (seconds) for streaming mic: take chunks and transcribe
+    _STREAMING_CHUNK_INTERVAL_SEC = 4
+
+    def _start_mic_streaming_worker(self):
+        """Запуск потоковой записи: загрузка модели, старт микрофона, цикл транскрибации в панели."""
+        import soundfile as sf
+        output_dir = self.current_project_dir if self.current_project_dir else tempfile.gettempdir()
+        if not hasattr(self, "_mic_streaming_stop_flag") or self._mic_streaming_stop_flag is None:
+            self._mic_streaming_stop_flag = []
+        self._mic_streaming_worker_done = threading.Event()
+        self._mic_streaming_timer_job = [None]
+        self._mic_streaming_elapsed = [0.0]
+        self._mic_streaming_results = []
+
+        def update_timer():
+            if not getattr(self, "_mic_streaming_panel_visible", True):
+                return
+            self._mic_streaming_elapsed[0] += 1.0
+            m, s = int(self._mic_streaming_elapsed[0]) // 60, int(self._mic_streaming_elapsed[0]) % 60
+            try:
+                self._mic_streaming_timer.configure(text=f"{m:02d}:{s:02d}")
+            except Exception:
+                return
+            if not self._mic_streaming_stop_flag and self.mic_record.is_recording() and getattr(self, "_mic_streaming_panel_visible", True):
+                try:
+                    self._mic_streaming_timer_job[0] = self.after(1000, update_timer)
                 except Exception:
                     pass
 
@@ -1829,49 +1944,58 @@ class App(ctk.CTk):
                     device = "cuda"
                 compute_type = self._compute_var.get().strip().lower() or "float16"
                 if not self.service.load_model(model_size=model_size, device=device, compute_type=compute_type):
-                    self.after(0, lambda: messagebox.showerror("Microphone", "Failed to load model."))
+                    self.after(0, lambda: (
+                        messagebox.showerror("Microphone", "Failed to load model."),
+                        self._mic_streaming_start_btn.configure(state="normal"),
+                        self._mic_streaming_stop_btn.configure(state="disabled"),
+                    ))
                     return
                 def safe_status(text):
-                    try:
-                        if not dlg.winfo_exists():
-                            return
-                    except Exception:
-                        return
-                    if dlg_closed[0]:
+                    if not getattr(self, "_mic_streaming_panel_visible", True):
                         return
                     try:
-                        status_lbl.configure(text=text)
+                        self._mic_streaming_status.configure(text=text)
                     except Exception:
                         pass
                 self.after(0, lambda: safe_status(t("mic.recording_streaming")))
                 err = self.mic_record.start_recording()
                 if err:
-                    self.after(0, lambda: messagebox.showerror("Microphone", err))
+                    self.after(0, lambda e=err: (
+                        messagebox.showerror("Microphone", e),
+                        self._mic_streaming_start_btn.configure(state="normal"),
+                        self._mic_streaming_stop_btn.configure(state="disabled"),
+                    ))
                     return
+                def safe_waveform_loop():
+                    if not getattr(self, "_mic_streaming_panel_visible", True) or getattr(self, "_mic_streaming_stop_flag", []):
+                        return
+                    if self.mic_record.is_recording():
+                        try:
+                            self._draw_waveform("streaming")
+                        except Exception:
+                            pass
+                        self._mic_streaming_waveform_job = self.after(80, safe_waveform_loop)
                 def safe_timer_start():
-                    try:
-                        if not dlg.winfo_exists():
-                            return
-                    except Exception:
-                        return
-                    if dlg_closed[0]:
+                    if not getattr(self, "_mic_streaming_panel_visible", True):
                         return
                     try:
-                        timer_job[0] = self.after(1000, update_timer)
+                        self._mic_streaming_timer_job[0] = self.after(1000, update_timer)
                     except Exception:
                         pass
                 self.after(0, safe_timer_start)
+                self.after(0, safe_waveform_loop)
                 language = language_display_to_code(self._settings_language_value)
                 beam_size = int(self._settings_beam_size.get()) if hasattr(self, "_settings_beam_size") else 5
                 vad_filter = self._settings_vad.get() if hasattr(self, "_settings_vad") else True
                 task = self._task_var.get().strip() or "transcribe"
                 word_ts = self._settings_word_ts.get() if hasattr(self, "_settings_word_ts") else False
-                use_glossary = use_glossary_var.get() and bool(self.current_glossary)
+                use_glossary = self._mic_streaming_use_glossary_var.get() and bool(self.current_glossary)
                 initial_prompt = GlossaryService.get_initial_prompt_text(self.current_glossary) if use_glossary else None
                 interval = self._STREAMING_CHUNK_INTERVAL_SEC
-                while len(stop_flag) == 0:
+                cumulative_offset = [0.0]
+                while len(self._mic_streaming_stop_flag) == 0:
                     time.sleep(interval)
-                    if len(stop_flag) > 0:
+                    if len(self._mic_streaming_stop_flag) > 0:
                         break
                     data = self.mic_record.take_accumulated_chunks()
                     if data is None or len(data) == 0:
@@ -1891,7 +2015,7 @@ class App(ctk.CTk):
                         duration = getattr(info, "duration", 0) or 0
                         offset = cumulative_offset[0]
                         for s in (segs or []):
-                            stream_results.append({
+                            self._mic_streaming_results.append({
                                 "start": s.get("start", 0) + offset,
                                 "end": s.get("end", 0) + offset,
                                 "text": s.get("text", ""),
@@ -1900,16 +2024,11 @@ class App(ctk.CTk):
                         text_bit = " ".join((s.get("text") or "").strip() for s in (segs or []))
                         if text_bit:
                             def safe_append(bit):
-                                try:
-                                    if not dlg.winfo_exists():
-                                        return
-                                except Exception:
-                                    return
-                                if dlg_closed[0]:
+                                if not getattr(self, "_mic_streaming_panel_visible", True):
                                     return
                                 try:
-                                    txt_live.insert("end", bit + " ")
-                                    txt_live.see("end")
+                                    self._mic_streaming_text.insert("end", bit + " ")
+                                    self._mic_streaming_text.see("end")
                                 except Exception:
                                     pass
                             self.after(0, lambda t=text_bit: safe_append(t))
@@ -1921,43 +2040,50 @@ class App(ctk.CTk):
             except Exception as e:
                 self.after(0, lambda: messagebox.showerror("Microphone", str(e)))
             finally:
-                worker_done.set()
+                self._mic_streaming_worker_done.set()
 
-        def on_stop():
-            dlg_closed[0] = True
-            stop_flag.append(True)
-            worker_done.wait(timeout=10.0)
-            if timer_job[0] is not None:
-                try:
-                    self.after_cancel(timer_job[0])
-                    timer_job[0] = None
-                except Exception:
-                    pass
-            path, err = self.mic_record.stop_and_save(output_dir=output_dir)
-            dlg.grab_release()
-            dlg.destroy()
-            if err:
-                messagebox.showerror("Microphone", err)
-                return
-            self.current_file = path
-            self.lbl_file.configure(text=os.path.basename(path))
-            self.full_results = list(stream_results)
-            if self.current_project_dir and path:
-                rel = SessionService._make_path_relative_to_project(
-                    path, os.path.join(self.current_project_dir, "_.wiproject")
-                )
-                self.file_transcripts[rel] = list(self.full_results)
-                self._refresh_project_files_list()
-            self._session_dirty = True
-            self._show_segment_editor()
-            self._rebuild_segment_list()
-            self.btn_export_txt.configure(state="normal")
-            self.btn_save_session.configure(state="normal")
-            self.btn_ollama.configure(state="normal")
-
-        stop_btn.configure(command=on_stop)
-        dlg.protocol("WM_DELETE_WINDOW", on_stop)
         threading.Thread(target=worker, daemon=True).start()
+
+    def _on_mic_streaming_stop(self):
+        """Остановить потоковую запись и сохранить результат."""
+        self._mic_streaming_stop_flag.append(True)
+        self._mic_streaming_worker_done.wait(timeout=10.0)
+        if getattr(self, "_mic_streaming_waveform_job", None) is not None:
+            try:
+                self.after_cancel(self._mic_streaming_waveform_job)
+                self._mic_streaming_waveform_job = None
+            except Exception:
+                pass
+        if self._mic_streaming_timer_job[0] is not None:
+            try:
+                self.after_cancel(self._mic_streaming_timer_job[0])
+                self._mic_streaming_timer_job[0] = None
+            except Exception:
+                pass
+        output_dir = self.current_project_dir if self.current_project_dir else tempfile.gettempdir()
+        path, err = self.mic_record.stop_and_save(output_dir=output_dir)
+        self._mic_streaming_start_btn.configure(state="normal")
+        self._mic_streaming_stop_btn.configure(state="disabled")
+        self._mic_streaming_elapsed[0] = 0.0
+        self._mic_streaming_timer.configure(text="00:00")
+        if err:
+            messagebox.showerror("Microphone", err)
+            return
+        self.current_file = path
+        self.lbl_file.configure(text=os.path.basename(path))
+        self.full_results = list(getattr(self, "_mic_streaming_results", []))
+        if self.current_project_dir and path:
+            rel = SessionService._make_path_relative_to_project(
+                path, os.path.join(self.current_project_dir, "_.wiproject")
+            )
+            self.file_transcripts[rel] = list(self.full_results)
+            self._refresh_project_files_list()
+        self._session_dirty = True
+        self._show_segment_editor()
+        self._rebuild_segment_list()
+        self.btn_export_txt.configure(state="normal")
+        self.btn_save_session.configure(state="normal")
+        self.btn_ollama.configure(state="normal")
 
     def _start_transcription(self):
         if not self.current_file:
@@ -1970,7 +2096,8 @@ class App(ctk.CTk):
         self.btn_stop.configure(state="normal")
         self.btn_browse.configure(state="disabled")
         self.btn_youtube_load.configure(state="disabled")
-        self.btn_mic_record.configure(state="disabled")
+        self.btn_mic_normal.configure(state="disabled")
+        self.btn_mic_streaming.configure(state="disabled")
         self.btn_export_txt.configure(state="disabled")
         self.btn_save_session.configure(state="disabled")
         self.btn_ollama.configure(state="disabled")
@@ -2044,7 +2171,8 @@ class App(ctk.CTk):
         self.after(0, lambda: self.btn_stop.configure(state="disabled"))
         self.after(0, lambda: self.btn_browse.configure(state="normal"))
         self.after(0, lambda: self.btn_youtube_load.configure(state="normal"))
-        self.after(0, lambda: self.btn_mic_record.configure(state="normal"))
+        self.after(0, lambda: self.btn_mic_normal.configure(state="normal"))
+        self.after(0, lambda: self.btn_mic_streaming.configure(state="normal"))
         if self.full_results:
             self._session_dirty = True
             self.after(0, lambda: self.btn_export_txt.configure(state="normal"))

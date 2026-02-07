@@ -32,6 +32,7 @@
   "mic.mode_normal": "Қарапайым жазу",
   "mic.mode_streaming": "Ағын (жазу және транскрипция)",
   "mic.loading_model": "Модель жүктелуде…",
+  "mic.press_start": "Бастау үшін Стартты басыңыз",
   "mic.recording_streaming": "Жазылуда — транскрипция",
   "mic.use_glossary": "Глоссарийді қолдану",
   "close.save_prompt": "Жабу алдында жобаны сақтау керек пе?",

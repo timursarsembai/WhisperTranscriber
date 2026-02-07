@@ -93,6 +93,22 @@ class MicRecordService:
             self._chunks = []
         return data
 
+    def get_waveform_tail(self, max_samples: int = 600) -> Optional["np.ndarray"]:
+        """
+        Return a copy of the most recent samples for waveform display (does not consume chunks).
+        Returns float32 array of shape (n,) or None. Thread-safe.
+        """
+        if not MIC_AVAILABLE:
+            return None
+        with self._chunks_lock:
+            if not self._chunks:
+                return None
+            data = np.concatenate(self._chunks, axis=0)
+        data = np.asarray(data).ravel()
+        if len(data) > max_samples:
+            data = data[-max_samples:].copy()
+        return data
+
     def stop_and_save(self, output_dir: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
         """
         Stop recording and save to a WAV file in output_dir (or temp dir if None).

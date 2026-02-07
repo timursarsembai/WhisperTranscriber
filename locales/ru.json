@@ -32,6 +32,7 @@
   "mic.mode_normal": "Обычная запись",
   "mic.mode_streaming": "Потоковая запись (с транскрибацией)",
   "mic.loading_model": "Загрузка модели…",
+  "mic.press_start": "Нажмите Старт для начала",
   "mic.recording_streaming": "Идёт запись и транскрибация",
   "mic.use_glossary": "Использовать глоссарий",
   "close.save_prompt": "Сохранить проект перед закрытием?",

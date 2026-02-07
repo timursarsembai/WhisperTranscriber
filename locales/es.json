@@ -32,6 +32,7 @@
   "mic.mode_normal": "Grabación normal",
   "mic.mode_streaming": "Flujo (grabar y transcribir en vivo)",
   "mic.loading_model": "Cargando modelo…",
+  "mic.press_start": "Pulse Inicio para comenzar",
   "mic.recording_streaming": "Grabando — transcribiendo",
   "mic.use_glossary": "Usar glosario",
   "close.save_prompt": "¿Guardar proyecto antes de cerrar?",

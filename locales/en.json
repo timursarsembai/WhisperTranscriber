@@ -32,6 +32,7 @@
   "mic.mode_normal": "Normal recording",
   "mic.mode_streaming": "Streaming (record + live transcription)",
   "mic.loading_model": "Loading model…",
+  "mic.press_start": "Press Start to begin",
   "mic.recording_streaming": "Recording — transcription in progress",
   "mic.use_glossary": "Use glossary",
   "close.save_prompt": "Save project before closing?",
