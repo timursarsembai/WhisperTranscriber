@@ -7,6 +7,19 @@ try:
 except ImportError:
     _LANG_CODES = ()
 
+# Порядок букв казахского алфавита (кириллица) для сортировки при locale kk
+_KAZAKH_ALPHABET = (
+    "аәбвгғдеёжзийкқлмнңоөпрстуұүфхһцчшщыіэюя"
+)
+_KAZAKH_ORDER = {c: i for i, c in enumerate(_KAZAKH_ALPHABET)}
+
+
+def _kazakh_sort_key(s):
+    """Ключ сортировки по казахскому алфавиту. Неизвестные символы идут после."""
+    s = (s or "").lower()
+    return tuple(_KAZAKH_ORDER.get(c, 10000 + ord(c)) for c in s)
+
+
 # Code -> display name (alphabetical by name for sorting)
 _LANG_NAMES = {
     "af": "Afrikaans", "am": "Amharic", "ar": "Arabic", "as": "Assamese",
@@ -38,15 +51,26 @@ _LANG_NAMES = {
 
 
 def get_language_combo_values():
-    """Returns ['Auto', 'Afrikaans (af)', 'Albanian (sq)', ...] sorted by language name."""
+    """Returns ['Auto', 'Afrikaans (af)', ...] with names translated and sorted by current locale."""
+    try:
+        from i18n import t, get_locale
+    except ImportError:
+        get_locale = lambda: "en"
+        t = lambda k: _LANG_NAMES.get(k.replace("lang_name.", ""), k)
     if not _LANG_CODES:
         return ["Auto", "English (en)", "Russian (ru)"]
     items = []
     for code in _LANG_CODES:
-        name = _LANG_NAMES.get(code, code.capitalize())
-        items.append(f"{name} ({code})")
-    items.sort(key=lambda x: x.split(" (")[0])
-    return ["Auto"] + items
+        key = "lang_name." + code
+        name = t(key)
+        if name == key:
+            name = _LANG_NAMES.get(code, code.capitalize())
+        items.append((name, code))
+    if get_locale() == "kk":
+        items.sort(key=lambda x: (_kazakh_sort_key(x[0]), x[1]))
+    else:
+        items.sort(key=lambda x: (x[0].lower(), x[1]))
+    return ["Auto"] + [f"{name} ({code})" for name, code in items]
 
 
 def language_display_to_code(display_value):

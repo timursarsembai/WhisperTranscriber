@@ -27,6 +27,9 @@ models/
 # Logs
 crash_log.txt
 
+# User config (locale etc.)
+wi_config.json
+
 # Splash screen image (generated during build)
 splash.png
 

@@ -7,6 +7,8 @@ Portable application for transcribing audio and video files using AI (faster-whi
 - Runs on GPU (CUDA) or CPU.
 - No Python or library installation required (standalone EXE).
 - Automatic model downloading on first run.
+- **Segment editor**: after transcription, each line is a segment with **Play** (play that part of the audio). Optional: install `pygame` for playback (`pip install pygame`).
+- **Ollama correction**: get AI suggestions per segment, then **Accept** or **Reject** each change.
 
 ## How to Use
 1. Run `WhisperTranscriber.exe`.
