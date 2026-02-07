@@ -46,27 +46,23 @@ class TranscriptionService:
     def load_model(self, model_size="large-v3", device="cuda", compute_type="float16"):
         """Загрузка модели Whisper."""
         try:
-            # Путь к папке с моделями внутри папки приложения
             if getattr(sys, 'frozen', False):
-                # Если запущено из EXE, храним модели в папке 'models' рядом с EXE
                 models_dir = os.path.join(os.path.dirname(sys.executable), "models")
             else:
-                # При разработке - в текущей папке
                 models_dir = os.path.join(os.getcwd(), "models")
-            
             if not os.path.exists(models_dir):
                 os.makedirs(models_dir)
-
+            if device == "cpu":
+                compute_type = "int8" if compute_type == "float16" else compute_type
             self.model = WhisperModel(
-                model_size, 
-                device=device, 
+                model_size,
+                device=device,
                 compute_type=compute_type,
                 download_root=models_dir
             )
             return True
         except Exception as e:
             print(f"Error loading model: {e}")
-            # Try switching to CPU if CUDA fails
             if device == "cuda":
                 print("Trying to switch to CPU...")
                 try:
@@ -76,22 +72,40 @@ class TranscriptionService:
                     print(f"Error loading on CPU: {e2}")
             return False
 
-    def transcribe(self, file_path, language=None, progress_callback=None):
+    def transcribe(
+        self,
+        file_path,
+        language=None,
+        initial_prompt=None,
+        beam_size=5,
+        vad_filter=True,
+        task="transcribe",
+        word_timestamps=False,
+        progress_callback=None,
+    ):
         """
         Transcribe audio/video file.
-        progress_callback: function accepting (current_time, total_duration, text_segment)
+        language: None = auto-detect, or "ru", "en", etc.
+        task: "transcribe" or "translate".
         """
         if not self.model:
             raise Exception("Model not loaded!")
 
         self.is_running = True
-        
+        kwargs = dict(
+            beam_size=beam_size,
+            vad_filter=vad_filter,
+            word_timestamps=word_timestamps,
+            task=task,
+        )
+        if initial_prompt and initial_prompt.strip():
+            kwargs["initial_prompt"] = initial_prompt.strip()
+        if language and language != "auto" and language.strip():
+            kwargs["language"] = language.strip()
+
         segments, info = self.model.transcribe(
             file_path,
-            language=language,
-            beam_size=5,
-            vad_filter=True,
-            word_timestamps=False
+            **kwargs
         )
 
         full_results = []
