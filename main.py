@@ -494,8 +494,7 @@ class App(ctk.CTk):
         self._mic_streaming_elapsed = [0.0]
         self._mic_panel_visible = False
 
-        # Правая панель: своя разметка — кнопки вкладок вверху, контент сразу под ними (без CTkTabview). По умолчанию видна.
-        self.settings_panel_visible = True
+        # Правая панель: своя разметка — кнопки вкладок вверху, контент сразу под ними (без CTkTabview). Всегда отображается.
         self._right_panel = ctk.CTkFrame(self, width=self._right_panel_width, fg_color=("gray85", "gray20"))
         self._right_panel.grid(row=0, column=2, rowspan=6, padx=(0, 20), pady=(0, 20), sticky="nsew")
         self.grid_columnconfigure(2, minsize=self._right_panel_width)
@@ -541,7 +540,7 @@ class App(ctk.CTk):
         self._build_settings_panel(self._tab_transcription)
         self._build_interface_settings_panel(self._tab_interface)
 
-        # Bottom panel: Export, Ollama, справа — Настройки
+        # Bottom panel: Export, Ollama
         self.export_frame = ctk.CTkFrame(self)
         self.export_frame.grid(row=5, column=1, padx=20, pady=(0, 20), sticky="ew")
         self.export_frame.grid_columnconfigure(2, weight=1)
@@ -549,12 +548,6 @@ class App(ctk.CTk):
         self.btn_export_txt.grid(row=0, column=0, padx=10, pady=10)
         self.btn_ollama = ctk.CTkButton(self.export_frame, text=t("export.ollama"), command=self._ollama_correct, state="disabled")
         self.btn_ollama.grid(row=0, column=1, padx=(0, 10), pady=10)
-        self.btn_settings = ctk.CTkButton(
-            self.export_frame,
-            text=t("bottom.hide_settings") if self.settings_panel_visible else t("bottom.settings"),
-            command=self._toggle_settings_panel,
-        )
-        self.btn_settings.grid(row=0, column=3, padx=10, pady=10)
 
         # --- Строка состояния внизу: слева — сохранено, по центру — версия и проверка обновлений, справа — поддержка ---
         self._last_save_time = None  # datetime или None
@@ -1021,43 +1014,6 @@ class App(ctk.CTk):
         widget.bind("<Enter>", _on_enter)
         widget.bind("<Leave>", _on_leave)
 
-    def _ensure_panel_geometry(self, open_panel: bool):
-        """Расширить или сузить окно при открытии/закрытии правой панели."""
-        try:
-            w, h = self.winfo_width(), self.winfo_height()
-            x, y = self.winfo_x(), self.winfo_y()
-        except Exception:
-            w, h, x, y = 800, 600, 100, 100
-        if open_panel:
-            self.grid_columnconfigure(2, minsize=self._right_panel_width)
-            self.geometry(f"{w + self._right_panel_width}x{h}+{x}+{y}")
-        else:
-            self.grid_columnconfigure(2, minsize=0)
-            self.geometry(f"{max(400, w - self._right_panel_width)}x{h}+{x}+{y}")
-
-    def _toggle_settings_panel(self):
-        """Показать/скрыть правую панель с вкладками (Транскрибация, Глоссарий, Интерфейс)."""
-        try:
-            w, h = self.winfo_width(), self.winfo_height()
-            x, y = self.winfo_x(), self.winfo_y()
-        except Exception:
-            w, h, x, y = 800, 600, 100, 100
-        if self.settings_panel_visible:
-            self._right_panel.grid_remove()
-            self.settings_panel_visible = False
-            self._refresh_ui()
-            self._ensure_panel_geometry(False)
-        else:
-            was_open = self.settings_panel_visible
-            self.grid_columnconfigure(2, minsize=self._right_panel_width)
-            self._right_panel.grid(row=0, column=2, rowspan=5, padx=(0, 20), pady=(0, 20), sticky="nsew")
-            self.settings_panel_visible = True
-            self._refresh_ui()
-            if not was_open:
-                self._ensure_panel_geometry(True)
-            # Принудительно обновить scrollregion при открытии (на случай если reqheight был 0 при создании)
-            self.after(100, self._force_update_scroll_regions)
-
     def _force_update_scroll_regions(self):
         """Обновить scrollregion у списка языков и перерисовать кастомный скроллбар."""
         self.update_idletasks()
@@ -1401,9 +1357,6 @@ class App(ctk.CTk):
             self._mic_gain_software_title.configure(text=t("mic.gain_software"))
         if hasattr(self, "_mic_gain_system_title"):
             self._mic_gain_system_title.configure(text=t("mic.gain_system") if getattr(self, "_mic_system_volume_available", False) else t("mic.gain_system_unavailable"))
-        self.btn_settings.configure(
-            text=t("bottom.hide_settings") if self.settings_panel_visible else t("bottom.settings")
-        )
         # Вкладки настроек: обновить названия и текущую вкладку
         if hasattr(self, "_settings_tab_buttons"):
             tabs = [t("tabs.transcription"), t("tabs.dictionaries"), t("tabs.interface")]
@@ -2068,9 +2021,14 @@ class App(ctk.CTk):
         main_scroll.grid(row=0, column=0, sticky="nsew", pady=10)
         main_scroll.grid_columnconfigure(0, weight=1)
         main_scroll.grid_rowconfigure(0, weight=1)
-        dict_tabview = ctk.CTkTabview(main_scroll, fg_color="transparent")
+        _tab_dictionaries_name = t("dictionaries.tab_dictionaries")
+        dict_tabview = ctk.CTkTabview(
+            main_scroll, fg_color="transparent",
+            command=lambda value: self._on_glossary_subtab_changed(value, _tab_dictionaries_name)
+        )
+        self._dict_tabview = dict_tabview
         dict_tabview.grid(row=0, column=0, sticky="nsew", padx=6)
-        tab_dictionaries = dict_tabview.add(t("dictionaries.tab_dictionaries"))
+        tab_dictionaries = dict_tabview.add(_tab_dictionaries_name)
         tab_presets = dict_tabview.add(t("dictionaries.tab_presets"))
         tab_import = dict_tabview.add(t("dictionaries.tab_import"))
         tab_dictionaries.grid_columnconfigure(0, weight=1)
@@ -2179,6 +2137,7 @@ class App(ctk.CTk):
 
         # --- Tab «Пресеты»: три раздела (третий скрыт по умолчанию), по высоте 50%/50% или 33%/33%/33% ---
         self._preset_edit_name = None  # имя пресета, который редактируется в третьем разделе
+        self._preset_rename_pending_name = None  # пресет, для которого показывается поле переименования
         tab_presets.grid_columnconfigure(0, weight=1)
         tab_presets.grid_rowconfigure(0, weight=1)
         tab_presets.grid_rowconfigure(1, weight=1)
@@ -2194,8 +2153,10 @@ class App(ctk.CTk):
         self._preset_tab_dict_list.grid(row=2, column=0, sticky="nsew", pady=(0, 4))
         self._preset_tab_dict_list.grid_columnconfigure(0, weight=1)
         _bind_mousewheel_to_scrollable_frame(self._preset_tab_dict_list)
-        self._dict_btn_save_preset = ctk.CTkButton(_preset_tab_top, text=t("dictionaries.save_as_preset"), width=220, border_spacing=0, command=lambda: None)
-        self._dict_btn_save_preset.grid(row=3, column=0, sticky="w", pady=(0, 4))
+        self._preset_new_name_entry = ctk.CTkEntry(_preset_tab_top, width=220, font=ctk.CTkFont(size=12), placeholder_text=t("presets.name_placeholder"))
+        self._preset_new_name_entry.grid(row=3, column=0, sticky="w", padx=6, pady=(6, 4))
+        self._dict_btn_save_preset = ctk.CTkButton(_preset_tab_top, text=t("presets.create_button"), width=220, border_spacing=0, command=lambda: None)
+        self._dict_btn_save_preset.grid(row=4, column=0, sticky="w", padx=6, pady=(0, 4))
 
         _preset_tab_middle = ctk.CTkFrame(tab_presets, fg_color=("gray92", "gray22"), corner_radius=8)
         _preset_tab_middle.grid(row=1, column=0, sticky="nsew", padx=6, pady=(4, 4))
@@ -2282,6 +2243,7 @@ class App(ctk.CTk):
             self._import_pending_paths = []
             self._import_files_label.configure(text="")
             refresh_global_list()
+            refresh_presets_tab()
             if imported:
                 messagebox.showinfo("", t("dictionaries.import_done", count=imported))
             if errors:
@@ -2387,6 +2349,7 @@ class App(ctk.CTk):
             if self._dict_rename_pending_id == did:
                 self._dict_rename_pending_id = None
             refresh_global_list()
+            refresh_presets_tab()
             refresh_editor()
             if not self._selected_dictionary_id:
                 tab_dictionaries.grid_rowconfigure(1, weight=0)
@@ -2677,6 +2640,32 @@ class App(ctk.CTk):
                 messagebox.showinfo("", t("dictionaries.saved"))
             refresh_global_list()
 
+        def _show_preset_context_menu(event, pname: str):
+            menu = Menu(self, tearoff=0)
+            menu.add_command(label=t("dictionaries.rename"), command=lambda: _start_preset_rename(pname))
+            menu.add_command(label=t("dictionaries.delete"), command=lambda: _delete_preset(pname))
+            try:
+                menu.tk_popup(event.x_root, event.y_root)
+            finally:
+                menu.grab_release()
+
+        def _start_preset_rename(pname: str):
+            self._preset_rename_pending_name = pname
+            refresh_presets_tab()
+
+        def _delete_preset(pname: str):
+            if not messagebox.askyesno(t("dictionaries.delete"), t("presets.delete_confirm", name=pname)):
+                return
+            presets = list(load_config().get("dictionary_presets") or [])
+            presets = [pr for pr in presets if (pr.get("name") or "") != pname]
+            save_config({"dictionary_presets": presets})
+            if self._preset_edit_name == pname:
+                self._preset_edit_name = None
+                tab_presets.grid_rowconfigure(2, weight=0)
+                _preset_tab_edit.grid_remove()
+            self._preset_rename_pending_name = None
+            refresh_presets_tab()
+
         def refresh_presets_tab():
             # Верх: список словарей с галочками (включить в проект)
             for w in list(self._preset_tab_dict_list.winfo_children()):
@@ -2710,7 +2699,7 @@ class App(ctk.CTk):
                     cb.grid(row=0, column=0, sticky="w", padx=(6, 4), pady=4)
                     lbl = ctk.CTkLabel(row_f, text=f"{name} ({dtype})", anchor="w")
                     lbl.grid(row=0, column=1, sticky="ew", padx=8, pady=4)
-            # Низ: список пресетов — галочка (применить к проекту) и клик по названию (редактировать пресет)
+            # Низ: список пресетов — галочка (применить к проекту), клик по названию (редактировать пресет), ПКМ — контекстное меню (переименовать/удалить)
             for w in list(self._preset_tab_preset_list.winfo_children()):
                 try:
                     w.destroy()
@@ -2718,6 +2707,7 @@ class App(ctk.CTk):
                     pass
             presets = load_config().get("dictionary_presets") or []
             current_ids = set(self.enabled_dictionary_ids or [])
+            rename_pending = getattr(self, "_preset_rename_pending_name", None)
             for row_i, p in enumerate(presets):
                 pname = p.get("name") or ""
                 if not pname:
@@ -2740,9 +2730,50 @@ class App(ctk.CTk):
                 row_f.grid_columnconfigure(1, weight=1)
                 cb = ctk.CTkCheckBox(row_f, text="", width=22, variable=var, command=lambda pname_=pname, v=var: _on_preset_toggle(pname_, v))
                 cb.grid(row=0, column=0, sticky="w", padx=(6, 4), pady=2)
-                lbl = ctk.CTkLabel(row_f, text=pname, anchor="w", cursor="hand2")
-                lbl.grid(row=0, column=1, sticky="w", padx=4, pady=2)
-                lbl.bind("<Button-1>", lambda e, pname_=pname: _show_edit_preset_section(pname_))
+                if pname == rename_pending:
+                    entry = ctk.CTkEntry(row_f, font=ctk.CTkFont(size=12))
+                    entry.insert(0, pname)
+                    entry.grid(row=0, column=1, sticky="ew", padx=4, pady=2)
+                    entry.focus_set()
+                    entry.select_range(0, "end")
+
+                    def _apply_preset_rename(pname_=pname, ent=entry):
+                        new_name = ent.get().strip()
+                        self._preset_rename_pending_name = None
+                        if not new_name:
+                            refresh_presets_tab()
+                            return
+                        presets_list = list(load_config().get("dictionary_presets") or [])
+                        other_names = {pr.get("name") or "" for pr in presets_list if (pr.get("name") or "") != pname_}
+                        if new_name in other_names:
+                            messagebox.showerror("", t("presets.name_exists"))
+                            self._preset_rename_pending_name = pname_
+                            refresh_presets_tab()
+                            return
+                        for i, pr in enumerate(presets_list):
+                            if (pr.get("name") or "") == pname_:
+                                presets_list[i] = {**pr, "name": new_name}
+                                break
+                        save_config({"dictionary_presets": presets_list})
+                        if self._preset_edit_name == pname_:
+                            self._preset_edit_name = new_name
+                        refresh_presets_tab()
+                        if self._preset_edit_name:
+                            refresh_preset_edit_section()
+
+                    def _cancel_preset_rename():
+                        self._preset_rename_pending_name = None
+                        refresh_presets_tab()
+
+                    entry.bind("<Return>", lambda e, pname_=pname, ent=entry: _apply_preset_rename(pname_, ent))
+                    entry.bind("<Escape>", lambda e: _cancel_preset_rename())
+                    entry.bind("<Button-3>", lambda e, pname_=pname: _show_preset_context_menu(e, pname_))
+                else:
+                    lbl = ctk.CTkLabel(row_f, text=pname, anchor="w", cursor="hand2")
+                    lbl.grid(row=0, column=1, sticky="w", padx=4, pady=2)
+                    lbl.bind("<Button-1>", lambda e, pname_=pname: _show_edit_preset_section(pname_))
+                    lbl.bind("<Button-3>", lambda e, pname_=pname: _show_preset_context_menu(e, pname_))
+                row_f.bind("<Button-3>", lambda e, pname_=pname: _show_preset_context_menu(e, pname_))
             if self._preset_edit_name:
                 refresh_preset_edit_section()
 
@@ -2773,6 +2804,7 @@ class App(ctk.CTk):
             if getattr(self, "_dict_new_name_entry", None):
                 self._dict_new_name_entry.delete(0, "end")
             refresh_global_list()
+            refresh_presets_tab()
 
         def do_open_folder():
             import subprocess
@@ -2789,19 +2821,26 @@ class App(ctk.CTk):
                     messagebox.showerror("", "Could not open folder.")
 
         def do_save_as_preset():
-            name = simpledialog.askstring(t("dictionaries.presets"), t("dictionaries.preset_name_prompt"), parent=self)
-            if not name or not name.strip():
+            name = getattr(self, "_preset_new_name_entry", None)
+            name = name.get().strip() if name else ""
+            if not name:
+                messagebox.showwarning("", t("presets.enter_name"))
                 return
-            name = name.strip()
             presets = list(load_config().get("dictionary_presets") or [])
+            if any((p.get("name") or "") == name for p in presets):
+                messagebox.showerror("", t("presets.name_exists"))
+                return
             presets.append({"name": name, "enabled_ids": list(self.enabled_dictionary_ids or [])})
             save_config({"dictionary_presets": presets})
+            if getattr(self, "_preset_new_name_entry", None):
+                self._preset_new_name_entry.delete(0, "end")
             refresh_presets_tab()
             messagebox.showinfo("", t("dictionaries.preset_saved"))
 
         self._dict_btn_add.configure(command=do_add_dictionary)
         self._dict_new_name_entry.bind("<Return>", lambda e: do_add_dictionary())
         self._dict_btn_save_preset.configure(command=do_save_as_preset)
+        self._preset_new_name_entry.bind("<Return>", lambda e: do_save_as_preset())
 
         def _refresh_dictionaries_ui():
             refresh_global_list()
@@ -2814,10 +2853,21 @@ class App(ctk.CTk):
                 self._dict_new_type_radio_terms.configure(text=t("dictionaries.type_terms"))
             if getattr(self, "_dict_new_type_var", None) and self._dict_new_type_var.get() not in ("correction", "terms"):
                 self._dict_new_type_var.set("correction")
+            if hasattr(self, "_preset_new_name_entry"):
+                self._preset_new_name_entry.configure(placeholder_text=t("presets.name_placeholder"))
+            if hasattr(self, "_dict_btn_save_preset"):
+                self._dict_btn_save_preset.configure(text=t("presets.create_button"))
 
         self._refresh_dictionaries_ui = _refresh_dictionaries_ui
         refresh_global_list()
         refresh_presets_tab()
+
+    def _on_glossary_subtab_changed(self, value: str, dictionaries_tab_name: str):
+        """При переключении на вкладку «Словари» обновить список файлов словарей с диска."""
+        if value != dictionaries_tab_name:
+            return
+        if getattr(self, "_refresh_dictionaries_ui", None):
+            self._refresh_dictionaries_ui()
 
     def _update_status_bar(self):
         """Обновляет строку состояния: время последнего сохранения; по центру — версия и ссылка на обновление."""
