@@ -4132,6 +4132,14 @@ def _run_start_window():
 
 
 if __name__ == "__main__":
+    # Проверка версии только при запуске из исходников; в EXE интерпретатор уже встроен
+    if not getattr(sys, "frozen", False) and sys.version_info[:2] != (3, 12):
+        messagebox.showerror(
+            "Python",
+            "Требуется Python 3.12. Текущая версия: %s.\nЗапустите: py -3.12 main.py (или активируйте окружение с Python 3.12)."
+            % (sys.version.split()[0],)
+        )
+        sys.exit(1)
     saved = load_locale_preference()
     if saved:
         set_locale(saved)

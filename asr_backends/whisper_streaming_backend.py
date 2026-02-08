@@ -69,14 +69,6 @@ class WhisperStreamingBackend(ASRBackend):
         **kwargs,
     ) -> bool:
         self._load_error = None
-        # Whisper-Streaming on PyPI supports only Python 3.9–3.12; avoid useless pip run on 3.13
-        if sys.version_info >= (3, 13):
-            self._load_error = (
-                "Whisper-Streaming не поддерживает Python 3.13. Нужен Python 3.9–3.12. "
-                "Запустите приложение в окружении Python 3.12 (например: py -3.12 main.py или виртуальное окружение с 3.12). "
-                "Остальные функции приложения (транскрибация файлов, импорт и т.д.) работают нормально."
-            )
-            return False
         asr_classes = None
         try:
             from whisper_online import FasterWhisperASR, OnlineASRProcessor
@@ -107,24 +99,11 @@ class WhisperStreamingBackend(ASRBackend):
             if getattr(sys, "frozen", False):
                 self._load_error = "Whisper-Streaming is not included in this build. Use the full installer."
             else:
-                err_lower = (install_error or "").lower()
-                py313_incompat = (
-                    "requires-python" in err_lower
-                    and "3.13" in (install_error or "")
-                    and ("could not find a version" in err_lower or "from versions: none" in err_lower)
-                )
-                if py313_incompat:
-                    self._load_error = (
-                        "Whisper-Streaming не поддерживает Python 3.13. Нужен Python 3.9–3.12. "
-                        "Запустите приложение в окружении Python 3.12 (например: py -3.12 main.py или виртуальное окружение с 3.12). "
-                        "Остальные функции приложения (транскрибация файлов, импорт и т.д.) работают нормально."
-                    )
+                self._load_error = "Whisper-Streaming could not be installed."
+                if install_error:
+                    self._load_error += " " + (install_error[:400] + "..." if len(install_error) > 400 else install_error)
                 else:
-                    self._load_error = "Whisper-Streaming could not be installed."
-                    if install_error:
-                        self._load_error += " " + (install_error[:400] + "..." if len(install_error) > 400 else install_error)
-                    else:
-                        self._load_error += " Install: pip install whisper-streaming librosa"
+                    self._load_error += " Install: pip install whisper-streaming librosa"
             return False
         FasterWhisperASR, OnlineASRProcessor = asr_classes[0], asr_classes[1]
 
