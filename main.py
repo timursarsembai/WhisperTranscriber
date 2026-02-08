@@ -1,6 +1,7 @@
 import glob
 import json as _json
 import os
+import queue
 import re
 import shutil
 import subprocess
@@ -562,6 +563,7 @@ class App(ctk.CTk):
         self._update_dots_job = None
         self._update_dots_index = 0
         self._update_check_timer = None
+        self._update_check_queue = queue.Queue()
         self._status_bar_frame = ctk.CTkFrame(self, fg_color=("gray92", "gray20"), height=22)
         self._status_bar_frame.grid(row=6, column=0, columnspan=3, sticky="ew", padx=20, pady=(0, 8))
         self._status_bar_frame.grid_propagate(False)
@@ -2902,9 +2904,21 @@ class App(ctk.CTk):
                     self._update_available = tag if latest > current else False
             except Exception:
                 self._update_available = False
-            self.after(0, self._finish_update_check)
+            try:
+                self._update_check_queue.put_nowait(None)
+            except Exception:
+                pass
 
+        self.after(100, self._poll_update_check)
         threading.Thread(target=_fetch, daemon=True).start()
+
+    def _poll_update_check(self):
+        """Опрос очереди из главного потока: по завершении фоновой проверки вызвать _finish_update_check."""
+        try:
+            self._update_check_queue.get_nowait()
+            self._finish_update_check()
+        except queue.Empty:
+            self.after(100, self._poll_update_check)
 
     def _on_check_updates_click(self):
         """Клик по «Проверить обновления» / «Доступно обновление»: открыть страницу релизов или предложить обновление."""
@@ -2918,7 +2932,7 @@ class App(ctk.CTk):
         """Модальное окно «Поддержать проект» по центру экрана: кнопки DonationAlerts, Liberapay и текст благодарности."""
         win = ctk.CTkToplevel(self)
         win.title(t("support.modal_title"))
-        width, height = 320, 168  # высота +20% от 140
+        width, height = 320, 250
         win.geometry(f"{width}x{height}")
         win.transient(self)
         win.grab_set()
@@ -2953,12 +2967,17 @@ class App(ctk.CTk):
         win.protocol("WM_DELETE_WINDOW", win.destroy)
 
         def _center_on_screen():
-            win.update_idletasks()
-            sw = win.winfo_screenwidth()
-            sh = win.winfo_screenheight()
-            x = (sw - width) // 2
-            y = (sh - height) // 2
-            win.geometry(f"{width}x{height}+{x}+{y}")
+            if not win.winfo_exists():
+                return
+            try:
+                win.update_idletasks()
+                sw = win.winfo_screenwidth()
+                sh = win.winfo_screenheight()
+                x = max(0, (sw - width) // 2)
+                y = max(0, (sh - height) // 2)
+                win.geometry(f"{width}x{height}+{x}+{y}")
+            except Exception:
+                pass
 
         win.after(50, _center_on_screen)
 
