@@ -14,3 +14,10 @@ soundfile>=0.12.1
 # Optional: System microphone volume (Windows)
 pycaw>=20240210
 comtypes; sys_platform == "win32"
+
+# Whisper-Streaming (streaming mic transcription)
+whisper-streaming
+librosa
+
+# WhisperX (file transcription + diarization; pulls in torch, transformers)
+whisperx

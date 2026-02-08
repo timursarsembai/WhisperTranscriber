@@ -23,7 +23,8 @@ class SessionData:
     # В v2 используется вместе с file_transcripts; при загрузке v1 сюда подставляется единственный файл
     audio_path: str = ""
     # Текущий транскрипт: список сегментов с таймлайнами (v1 или текущий файл в v2)
-    transcript: List[dict] = field(default_factory=list)  # [{"start": float, "end": float, "text": str}, ...]
+    # Сегменты: {"start", "end", "text"}; опционально "speaker" (диаризация WhisperX)
+    transcript: List[dict] = field(default_factory=list)
     # Метаданные
     created_at: str = ""
     updated_at: str = ""

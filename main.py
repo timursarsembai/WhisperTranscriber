@@ -361,6 +361,14 @@ class App(ctk.CTk):
         self.progress_bar.set(0)
         self._bind_tooltip(self.btn_start, "control.start")
         self._bind_tooltip(self.btn_stop, "control.stop")
+        self._control_diarize_cb = ctk.CTkCheckBox(
+            self.control_frame, text=t("settings.diarize"), command=self._save_transcription_settings,
+        )
+        self._control_diarize_cb.grid(row=1, column=0, columnspan=3, padx=8, pady=(0, 6), sticky="w")
+        if load_config().get("whisperx_diarize", False):
+            self._control_diarize_cb.select()
+        else:
+            self._control_diarize_cb.deselect()
 
         # Под прогресс-баром — подпись с именем файла (или «Файл не выбран (форматы)»)
         self._file_status_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -1042,6 +1050,7 @@ class App(ctk.CTk):
         _hint_font = ctk.CTkFont(size=11)
         _hint_color = ("gray50", "gray55")
         _hr_color = ("gray75", "gray30")
+        _cfg = load_config()
 
         def _add_hr():
             nonlocal row
@@ -1049,7 +1058,7 @@ class App(ctk.CTk):
             hr.grid(row=row, column=0, sticky="ew", padx=6, pady=(8, 4))
             row += 1
 
-        self._lbl_model = ctk.CTkLabel(win, text=t("settings.model"), font=ctk.CTkFont(weight="bold"))
+        self._lbl_model = ctk.CTkLabel(win, text=t("settings.models_faster_whisper"), font=ctk.CTkFont(weight="bold"))
         self._lbl_model.grid(row=row, column=0, sticky="w", padx=6, pady=(10, 2))
         row += 1
         model_opts = [
@@ -1139,6 +1148,51 @@ class App(ctk.CTk):
         # подсветка выбранной модели
         self._pick_model(self._settings_model_value)
         row += 1
+        _add_hr()
+        self._lbl_model_whisperx = ctk.CTkLabel(win, text=t("settings.whisperx_options_diarization"), font=ctk.CTkFont(weight="bold"))
+        self._lbl_model_whisperx.grid(row=row, column=0, sticky="w", padx=6, pady=(10, 2))
+        row += 1
+        self._whisperx_opts_frame = ctk.CTkFrame(win, fg_color="transparent")
+        self._whisperx_opts_frame.grid(row=row, column=0, sticky="w", padx=6, pady=(0, 8))
+        self._whisperx_opts_frame.grid_columnconfigure(0, weight=1)
+        self._whisperx_opts_frame.grid_columnconfigure(1, weight=0)
+        _wx_row = 0
+        self._lbl_hf_token = ctk.CTkLabel(self._whisperx_opts_frame, text=t("settings.hf_token"), font=_hint_font, text_color=_hint_color)
+        self._lbl_hf_token.grid(row=_wx_row, column=0, columnspan=2, sticky="w", pady=(0, 0))
+        _wx_row += 1
+        self._settings_hf_token = ctk.CTkEntry(self._whisperx_opts_frame, width=220, show="*", placeholder_text=t("settings.hf_token_placeholder"))
+        self._settings_hf_token.insert(0, (_cfg.get("whisperx_hf_token") or "").strip())
+        self._settings_hf_token.grid(row=_wx_row, column=0, columnspan=2, sticky="w", pady=(0, 2))
+        self._settings_hf_token.bind("<Control-KeyPress>", self._hf_token_entry_paste_by_keycode)
+        self._settings_hf_token.bind("<Button-3>", self._show_hf_token_context_menu)
+        _wx_row += 1
+        _hf_token_url = "https://huggingface.co/settings/tokens"
+        self._lbl_hf_token_link = ctk.CTkLabel(
+            self._whisperx_opts_frame, text=_hf_token_url, font=ctk.CTkFont(size=11), text_color=("#1a73e8", "#8ab4f8"),
+            cursor="hand2",
+        )
+        self._lbl_hf_token_link.grid(row=_wx_row, column=0, columnspan=2, sticky="w", pady=(0, 4))
+        self._lbl_hf_token_link.bind("<Button-1>", lambda e: webbrowser.open(_hf_token_url))
+        _wx_row += 1
+        self._lbl_min_speakers = ctk.CTkLabel(self._whisperx_opts_frame, text=t("settings.min_speakers"), font=_hint_font, text_color=_hint_color)
+        self._lbl_min_speakers.grid(row=_wx_row, column=0, sticky="w", pady=(4, 0))
+        self._lbl_max_speakers = ctk.CTkLabel(self._whisperx_opts_frame, text=t("settings.max_speakers"), font=_hint_font, text_color=_hint_color)
+        self._lbl_max_speakers.grid(row=_wx_row, column=1, sticky="w", padx=(12, 0), pady=(4, 0))
+        _wx_row += 1
+        self._settings_min_speakers = ctk.CTkEntry(self._whisperx_opts_frame, width=80, placeholder_text="1")
+        self._settings_min_speakers.insert(0, str(_cfg.get("whisperx_min_speakers") or ""))
+        self._settings_min_speakers.grid(row=_wx_row, column=0, sticky="w", pady=(0, 2))
+        self._settings_max_speakers = ctk.CTkEntry(self._whisperx_opts_frame, width=80, placeholder_text="2")
+        self._settings_max_speakers.insert(0, str(_cfg.get("whisperx_max_speakers") or ""))
+        self._settings_max_speakers.grid(row=_wx_row, column=1, sticky="w", padx=(12, 0), pady=(0, 2))
+        _wx_row += 1
+        self._btn_save_whisperx = ctk.CTkButton(
+            self._whisperx_opts_frame, text=t("settings.save"), width=100,
+            command=self._save_transcription_settings,
+        )
+        self._btn_save_whisperx.grid(row=_wx_row, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        row += 1
+        self._refresh_model_status_labels()
         _add_hr()
         self._lbl_language = ctk.CTkLabel(win, text=t("settings.language"), font=ctk.CTkFont(weight="bold"))
         self._lbl_language.grid(row=row, column=0, sticky="w", padx=6, pady=(10, 2))
@@ -1375,7 +1429,8 @@ class App(ctk.CTk):
             self._dictionaries_panel_built = True
         # Транскрибация: все надписи
         for key, attr in [
-            ("settings.model", "_lbl_model"),
+            ("settings.models_faster_whisper", "_lbl_model"),
+            ("settings.whisperx_options_diarization", "_lbl_model_whisperx"),
             ("settings.language", "_lbl_language"),
             ("settings.language_hint", "_lbl_language_hint"),
             ("settings.beam_size", "_lbl_beam_size"),
@@ -1389,6 +1444,10 @@ class App(ctk.CTk):
             w = getattr(self, attr, None)
             if w:
                 w.configure(text=t(key))
+        if hasattr(self, "_control_diarize_cb"):
+            self._control_diarize_cb.configure(text=t("settings.diarize"))
+        if hasattr(self, "_lbl_hf_token"):
+            self._lbl_hf_token.configure(text=t("settings.hf_token"))
         if hasattr(self, "_model_selection_label"):
             self._model_selection_label.configure(text=t("settings.selection", value=self._settings_model_value))
         for model_id, row_f in getattr(self, "_model_row_frames", {}).items():
@@ -1413,6 +1472,8 @@ class App(ctk.CTk):
             self._settings_word_ts.configure(text=t("settings.word_timestamps"))
         if hasattr(self, "_btn_reset_transcription"):
             self._btn_reset_transcription.configure(text=t("settings.reset_to_default"))
+        if hasattr(self, "_btn_save_whisperx"):
+            self._btn_save_whisperx.configure(text=t("settings.save"))
         # Глоссарий
         if getattr(self, "_refresh_dictionaries_ui", None):
             self._refresh_dictionaries_ui()
@@ -1566,16 +1627,38 @@ class App(ctk.CTk):
         if not hasattr(self, "_task_var"):
             return
         code = language_display_to_code(getattr(self, "_settings_language_value", None) or "Auto")
-        save_config({
+        diarize = bool(getattr(self, "_control_diarize_cb", None) and self._control_diarize_cb.get()) if hasattr(self, "_control_diarize_cb") else bool(load_config().get("whisperx_diarize", False))
+        eng = "whisperx" if diarize else "faster-whisper"
+        out = {
             "transcription_model": getattr(self, "_settings_model_value", "base"),
             "transcription_language": code,
             "transcription_beam_size": int(self._settings_beam_size.get()) if hasattr(self, "_settings_beam_size") else 5,
             "transcription_vad": bool(self._settings_vad.get()) if hasattr(self, "_settings_vad") else True,
             "transcription_word_timestamps": bool(self._settings_word_ts.get()) if hasattr(self, "_settings_word_ts") else False,
             "transcription_task": self._task_var.get().strip() or "transcribe",
-            "transcription_device": self._device_var.get().strip() or "auto",
-            "transcription_compute_type": self._compute_var.get().strip() or "float16",
-        })
+            "transcription_device": (_dv.get().strip() or "auto") if (_dv := getattr(self, "_device_var", None)) else "auto",
+            "transcription_compute_type": (_cv.get().strip() or "float16") if (_cv := getattr(self, "_compute_var", None)) else "float16",
+            "transcription_engine": eng,
+        }
+        if hasattr(self, "_control_diarize_cb"):
+            out["whisperx_diarize"] = bool(self._control_diarize_cb.get())
+        if hasattr(self, "_settings_hf_token"):
+            out["whisperx_hf_token"] = (self._settings_hf_token.get() or "").strip() or None
+        if hasattr(self, "_settings_min_speakers"):
+            try:
+                v = self._settings_min_speakers.get().strip()
+                out["whisperx_min_speakers"] = int(v) if v else None
+            except (ValueError, AttributeError):
+                out["whisperx_min_speakers"] = None
+        if hasattr(self, "_settings_max_speakers"):
+            try:
+                v = self._settings_max_speakers.get().strip()
+                out["whisperx_max_speakers"] = int(v) if v else None
+            except (ValueError, AttributeError):
+                out["whisperx_max_speakers"] = None
+        save_config(out)
+        if getattr(self, "service", None) is not None:
+            self.service.model = None
 
     def _reset_transcription_settings(self):
         """Сбросить настройки транскрибации на значения по умолчанию."""
@@ -1588,8 +1671,21 @@ class App(ctk.CTk):
             "transcription_task": "transcribe",
             "transcription_device": "auto",
             "transcription_compute_type": "float16",
+            "transcription_engine": "faster-whisper",
+            "whisperx_diarize": False,
+            "whisperx_hf_token": None,
+            "whisperx_min_speakers": None,
+            "whisperx_max_speakers": None,
         }
         save_config(defaults)
+        if hasattr(self, "_control_diarize_cb"):
+            self._control_diarize_cb.deselect()
+        if hasattr(self, "_settings_hf_token"):
+            self._settings_hf_token.delete(0, "end")
+        if hasattr(self, "_settings_min_speakers"):
+            self._settings_min_speakers.delete(0, "end")
+        if hasattr(self, "_settings_max_speakers"):
+            self._settings_max_speakers.delete(0, "end")
         self._settings_model_value = "base"
         self._model_selection_label.configure(text=t("settings.selection", value="base"))
         for mid, rf in getattr(self, "_model_row_frames", {}).items():
@@ -1612,30 +1708,35 @@ class App(ctk.CTk):
         downloading = getattr(self, "_model_downloading", None)
         status = _get_models_downloaded_status()
         cache_dir = TranscriptionService.get_models_cache_dir()
-        for mid, lbl in getattr(self, "_model_status_labels", {}).items():
-            if mid == downloading:
-                continue
-            try:
-                if status.get(mid):
-                    size_bytes = _get_model_downloaded_size_bytes(cache_dir, mid)
-                    size_str = _format_size_bytes(size_bytes) if size_bytes else ""
-                    if size_str:
-                        text = t("model.status.downloaded_size", size=size_str)
+
+        def _update_labels(labels_dict, delete_btns_dict):
+            for mid, lbl in (labels_dict or {}).items():
+                if mid == downloading:
+                    continue
+                try:
+                    if status.get(mid):
+                        size_bytes = _get_model_downloaded_size_bytes(cache_dir, mid)
+                        size_str = _format_size_bytes(size_bytes) if size_bytes else ""
+                        if size_str:
+                            text = t("model.status.downloaded_size", size=size_str)
+                        else:
+                            text = t("model.status.downloaded")
+                        lbl.configure(text=text, text_color=("gray40", "gray55"))
                     else:
-                        text = t("model.status.downloaded")
-                    lbl.configure(text=text, text_color=("gray40", "gray55"))
-                else:
-                    lbl.configure(text=t("model.status.not_downloaded"), text_color=("#b85c00", "#e68a00"))
-            except Exception:
-                pass
-        for mid, delete_btn in getattr(self, "_model_delete_btns", {}).items():
-            try:
-                if mid == downloading or not status.get(mid):
-                    delete_btn.pack_forget()
-                else:
-                    delete_btn.pack(side="right", padx=(4, 0))
-            except Exception:
-                pass
+                        lbl.configure(text=t("model.status.not_downloaded"), text_color=("#b85c00", "#e68a00"))
+                except Exception:
+                    pass
+            for mid, delete_btn in (delete_btns_dict or {}).items():
+                try:
+                    if mid == downloading or not status.get(mid):
+                        delete_btn.pack_forget()
+                    else:
+                        delete_btn.pack(side="right", padx=(4, 0))
+                except Exception:
+                    pass
+
+        _update_labels(getattr(self, "_model_status_labels", {}), getattr(self, "_model_delete_btns", {}))
+
         for mid, (pf, pb) in getattr(self, "_model_progress_bars", {}).items():
             if mid == downloading:
                 continue
@@ -3078,6 +3179,47 @@ class App(ctk.CTk):
         ent.insert("insert", text)
         return "break"
 
+    def _hf_token_entry_paste_by_keycode(self, event):
+        """Paste into HF token entry on Ctrl+V by keycode (any keyboard layout)."""
+        if event.keycode != 86:
+            return
+        if not (event.state & 0x4):
+            return
+        try:
+            text = self.clipboard_get()
+        except Exception:
+            return
+        if not text:
+            return
+        ent = self._settings_hf_token
+        try:
+            ent.delete("sel.first", "sel.last")
+        except Exception:
+            pass
+        ent.insert("insert", text)
+        return "break"
+
+    def _show_hf_token_context_menu(self, event):
+        """Right-click context menu for HF token entry: Paste."""
+        menu = Menu(self, tearoff=0)
+        menu.add_command(label=t("common.paste"), command=lambda: self._hf_token_paste_from_menu())
+        menu.tk_popup(event.x_root, event.y_root)
+
+    def _hf_token_paste_from_menu(self):
+        ent = self._settings_hf_token
+        ent.focus_set()
+        try:
+            text = self.clipboard_get()
+        except Exception:
+            return
+        if not text:
+            return
+        try:
+            ent.delete("sel.first", "sel.last")
+        except Exception:
+            pass
+        ent.insert("insert", text)
+
     def _load_from_youtube(self):
         url = (self._youtube_entry.get() or "").strip()
         if not url:
@@ -3196,7 +3338,7 @@ class App(ctk.CTk):
         if self._mic_current_mode == "normal":
             self._mic_status.configure(text="")
         else:
-            self._mic_status.configure(text=t("mic.press_start"))
+            self._mic_status.configure(text=t("mic.streaming_engine_hint"))
 
     def _get_mic_device_index(self) -> Optional[int]:
         """Индекс выбранного устройства ввода или None для устройства по умолчанию."""
@@ -3451,9 +3593,18 @@ class App(ctk.CTk):
                 if device == "auto":
                     device = "cuda"
                 compute_type = self._compute_var.get().strip().lower() or "float16"
-                if not self.service.load_model(model_size=model_size, device=device, compute_type=compute_type):
-                    self.after(0, lambda: (
-                        messagebox.showerror("Microphone", "Failed to load model."),
+                language = language_display_to_code(self._settings_language_value)
+                task = self._task_var.get().strip() or "transcribe"
+                vad_filter = self._settings_vad.get() if hasattr(self, "_settings_vad") else True
+                load_kw = dict(model_size=model_size, device=device, compute_type=compute_type)
+                load_kw["engine_override"] = "whisper-streaming"
+                load_kw["language"] = language
+                load_kw["task"] = task
+                load_kw["vad_filter"] = vad_filter
+                if not self.service.load_model(**load_kw):
+                    err_msg = getattr(self.service, "_last_load_error", None) or "Failed to load model."
+                    self.after(0, lambda m=err_msg: (
+                        messagebox.showerror("Microphone", m),
                         self._mic_start_btn.configure(state="normal"),
                         self._mic_stop_btn.configure(state="disabled"),
                     ))
@@ -3493,21 +3644,72 @@ class App(ctk.CTk):
                         pass
                 self.after(0, safe_timer_start)
                 self.after(0, safe_waveform_loop)
-                language = language_display_to_code(self._settings_language_value)
                 beam_size = int(self._settings_beam_size.get()) if hasattr(self, "_settings_beam_size") else 5
-                vad_filter = self._settings_vad.get() if hasattr(self, "_settings_vad") else True
-                task = self._task_var.get().strip() or "transcribe"
                 word_ts = self._settings_word_ts.get() if hasattr(self, "_settings_word_ts") else False
                 use_glossary = self._mic_streaming_use_glossary_var.get() and self._has_dictionaries()
                 initial_prompt = self._get_initial_prompt_text() if use_glossary else None
                 interval = self._STREAMING_CHUNK_INTERVAL_SEC
+                stream_interval = interval
                 cumulative_offset = [0.0]
+                use_streaming_api = self.service.supports_streaming()
+                if use_streaming_api:
+                    import queue as queue_module
+                    import numpy as np
+                    try:
+                        import librosa
+                    except ImportError:
+                        use_streaming_api = False
+                if use_streaming_api:
+                    audio_queue = queue_module.Queue()
+                    streaming_done = threading.Event()
+                    def chunk_iter():
+                        while True:
+                            x = audio_queue.get()
+                            if x is None:
+                                return
+                            yield x
+                    def streaming_consumer():
+                        try:
+                            for start, end, text in self.service.streaming_transcribe(chunk_iter()):
+                                if not getattr(self, "_mic_streaming_stop_flag", []):
+                                    self._mic_streaming_results.append({
+                                        "start": start,
+                                        "end": end,
+                                        "text": text or "",
+                                    })
+                                    if text:
+                                        def safe_append(bit):
+                                            if not getattr(self, "_mic_panel_visible", True):
+                                                return
+                                            try:
+                                                self.txt_output.insert("end", bit + " ")
+                                                self.txt_output.see("end")
+                                            except Exception:
+                                                pass
+                                        self.after(0, lambda t=text: safe_append(t))
+                        finally:
+                            streaming_done.set()
+                    consumer_thread = threading.Thread(target=streaming_consumer, daemon=True)
+                    consumer_thread.start()
+                    stream_interval = max(0.5, min(2.0, interval * 0.5))
+                else:
+                    stream_interval = interval
                 while len(self._mic_streaming_stop_flag) == 0:
-                    time.sleep(interval)
+                    time.sleep(stream_interval if use_streaming_api else interval)
                     if len(self._mic_streaming_stop_flag) > 0:
                         break
                     data = self.mic_record.take_accumulated_chunks()
                     if data is None or len(data) == 0:
+                        continue
+                    if use_streaming_api:
+                        sr = self.mic_record.sample_rate
+                        arr = data if hasattr(data, "dtype") else np.frombuffer(data, dtype=np.int16)
+                        audio_f = (arr.astype(np.float32) / 32768.0) if (getattr(arr, "dtype", None) == np.int16) else arr.astype(np.float32)
+                        if sr != 16000:
+                            audio_16k = librosa.resample(audio_f, orig_sr=sr, target_sr=16000)
+                        else:
+                            audio_16k = audio_f
+                        audio_queue.put((audio_16k, 16000))
                         continue
                     tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
                     try:
@@ -3546,6 +3748,9 @@ class App(ctk.CTk):
                             os.unlink(tmp.name)
                         except Exception:
                             pass
+                if use_streaming_api:
+                    audio_queue.put(None)
+                    streaming_done.wait(timeout=15.0)
             except Exception as e:
                 self.after(0, lambda: messagebox.showerror("Microphone", str(e)))
             finally:
@@ -3557,6 +3762,10 @@ class App(ctk.CTk):
         """Остановить потоковую запись и сохранить результат."""
         self._mic_streaming_stop_flag.append(True)
         self._mic_streaming_worker_done.wait(timeout=10.0)
+        try:
+            self.service.clear_engine_override()
+        except Exception:
+            pass
         if getattr(self, "_mic_streaming_waveform_job", None) is not None:
             try:
                 self.after_cancel(self._mic_streaming_waveform_job)
@@ -3642,16 +3851,22 @@ class App(ctk.CTk):
 
             self._update_status("Processing...")
             initial_prompt = self._get_initial_prompt_text()
-            results, info = self.service.transcribe(
-                self.current_file,
+            transcribe_kw = dict(
                 language=language,
                 initial_prompt=initial_prompt,
                 beam_size=beam_size,
                 vad_filter=vad_filter,
                 task=task,
                 word_timestamps=word_timestamps,
-                progress_callback=self._on_progress
+                progress_callback=self._on_progress,
             )
+            cfg = load_config()
+            if (cfg.get("transcription_engine") or "").strip().lower() == "whisperx":
+                transcribe_kw["diarize"] = bool(cfg.get("whisperx_diarize", False))
+                transcribe_kw["hf_token"] = (cfg.get("whisperx_hf_token") or "").strip() or None
+                transcribe_kw["min_speakers"] = cfg.get("whisperx_min_speakers")
+                transcribe_kw["max_speakers"] = cfg.get("whisperx_max_speakers")
+            results, info = self.service.transcribe(self.current_file, **transcribe_kw)
             results = self._strip_tail_hallucinations(results)
             self.full_results = results
             if load_config().get("apply_corrections_post") and self.full_results:
@@ -3736,6 +3951,10 @@ class App(ctk.CTk):
             btn_play.grid(row=0, column=0, padx=6, pady=4, sticky="w")
             time_lbl = ctk.CTkLabel(row_f, text=f"[{start:.1f}s – {end:.1f}s]", text_color="gray", font=ctk.CTkFont(size=11))
             time_lbl.grid(row=0, column=1, padx=(0, 8), pady=4, sticky="w")
+            speaker = seg.get("speaker")
+            if speaker:
+                sp_lbl = ctk.CTkLabel(row_f, text=speaker, text_color=("gray50", "gray55"), font=ctk.CTkFont(size=10))
+                sp_lbl.grid(row=0, column=2, padx=(0, 8), pady=4, sticky="w")
             if suggested and suggested != text:
                 orig_lbl = ctk.CTkLabel(row_f, text=text, text_color="gray", anchor="w", wraplength=400)
                 orig_lbl.grid(row=1, column=0, columnspan=2, padx=(56, 8), pady=(0, 2), sticky="w")
@@ -3838,7 +4057,7 @@ class App(ctk.CTk):
 
     def _export_txt(self):
         if not self.full_results or not self.current_file: return
-        rows_for_export = [{"start": s["start"], "end": s["end"], "text": s["text"]} for s in self.full_results]
+        rows_for_export = [{"start": s["start"], "end": s["end"], "text": s["text"], **({"speaker": s["speaker"]} if s.get("speaker") else {})} for s in self.full_results]
         suggested_name = os.path.splitext(os.path.basename(self.current_file))[0] + ".txt"
         file_path = filedialog.asksaveasfilename(
             defaultextension=".txt",

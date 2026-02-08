@@ -15,6 +15,7 @@ def get_nvidia_dll_paths():
     return cublas_bin, cudnn_bin
 
 def build():
+    script_dir = os.path.dirname(os.path.abspath(__file__))
     # Путь к customtkinter для включения его json/theme файлов
     ctk_path = os.path.dirname(customtkinter.__file__)
     
@@ -36,7 +37,10 @@ def build():
         "--onefile",
         "--windowed",
         "--name=WhisperTranscriber", # Better name for EXE
-        "--splash=splash.png", # Added splash screen
+    ]
+    if os.path.isfile(os.path.join(script_dir, "splash.png")):
+        cmd.append("--splash=splash.png")
+    cmd.extend([
         # Add customtkinter data
         f"--add-data={ctk_path}{os.pathsep}customtkinter",
         # Add faster_whisper assets (silero_vad.onnx etc.)
@@ -52,9 +56,29 @@ def build():
         # Optional: Microphone recording
         "--hidden-import=sounddevice",
         "--hidden-import=soundfile",
+        # ASR backends (facade + lazy-loaded backends)
+        "--hidden-import=asr_backends",
+        "--hidden-import=asr_backends.base",
+        "--hidden-import=asr_backends.faster_whisper_backend",
+        "--hidden-import=asr_backends.whisper_streaming_backend",
+        "--hidden-import=asr_backends.whisperx_backend",
+        # Whisper-Streaming (streaming mic) — full package so EXE works out of the box
+        "--hidden-import=whisper_online",
+        "--hidden-import=whisper_streaming",
+        "--hidden-import=whisper_streaming.whisper_online",
+        "--collect-submodules=whisper_streaming",
+        "--hidden-import=librosa",
+        "--collect-submodules=librosa",
+        "--collect-data=librosa",
+        # WhisperX (file + diarization)
+        "--hidden-import=whisperx",
+        "--hidden-import=whisperx.asr",
+        "--hidden-import=whisperx.alignment",
+        "--hidden-import=whisperx.diarize",
+        "--collect-submodules=whisperx",
         # Main file
         "main.py"
-    ]
+    ])
 
     print(f"Starting build with command: {' '.join(cmd)}")
     subprocess.run(cmd, check=True)
