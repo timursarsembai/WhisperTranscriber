@@ -1,51 +1,69 @@
 # Desktop Whisper Transcriber
 
-Portable application for transcribing audio and video files using AI (faster-whisper).
+Портативное приложение для транскрибации аудио и видео с помощью ИИ (faster-whisper). Поддержка проектов, глобальных словарей, пресетов и постобработки текста.
 
-## Features
-- Support for Russian and Arabic languages.
-- Runs on GPU (CUDA) or CPU.
-- No Python or library installation required (standalone EXE).
-- Automatic model downloading on first run.
-- **Segment editor**: after transcription, each line is a segment with **Play** (play that part of the audio). Optional: install `pygame` for playback (`pip install pygame`).
-- **Ollama correction**: get AI suggestions per segment, then **Accept** or **Reject** each change.
+## Основные возможности
 
-## How to Use
-1. Run `WhisperTranscriber.exe`.
-2. Click **"Browse File"** and select a video or audio file.
-3. Select a model (e.g., `base` for speed or `large-v3` for quality).
-4. Click **"Start Transcription"**.
-5. Once finished, use the **"Export to TXT"** button.
+- **Транскрипция**: поддержка многих языков (в т.ч. русский, арабский и др.). Работа на GPU (CUDA) или CPU.
+- **Проекты (.wiproject)**: сохранение и загрузка сессии (аудио, транскрипт, выбранные словари). Один проект может содержать несколько файлов с разными транскриптами.
+- **Глобальные словари**: общая папка словарей для всех проектов. Типы: *исправления* (original → corrected) и *термины* (подсказки для Whisper). В проекте сохраняются только ID включённых словарей. Пресеты наборов словарей, применение исправлений к тексту после транскрипции (опционально).
+- **Редактор сегментов**: после транскрипции каждая строка — сегмент с кнопкой **Play** (воспроизведение этого фрагмента). Для воспроизведения опционально: `pip install pygame`.
+- **Ollama**: коррекция текста через локальную LLM — предложения по сегментам, кнопки «Принять» / «Отклонить».
+- **Микрофон**: запись в обычном и потоковом режиме, настройка усиления (программное и системное при наличии pycaw), осциллограф, таймер.
+- **YouTube**: вставка ссылки и загрузка аудио (yt-dlp), далее транскрипция как у обычного файла.
+- **Локализация**: интерфейс на английском, русском, испанском и казахском; выбор языка во вкладке «Интерфейс» (с флагом).
+- **Строка состояния**: внизу окна отображается время последнего сохранения проекта.
+- **Файлы проекта**: список файлов в папке проекта, переименование по месту, открытие в папке, кнопка «Обновить» для обновления списка после ручного добавления файлов.
 
-## System Requirements
+Сборка в EXE: не требуется установка Python и библиотек; всё необходимое включается в сборку.
 
-Different models require different resources:
+## Как пользоваться
 
-| Feature | Minimum (for tiny/base) | Recommended (for large-v3) |
-| :--- | :--- | :--- |
-| **CPU** | 2-core (Intel i3 / Ryzen 3) | 4-core and higher (i5 / Ryzen 5) |
-| **RAM** | 4 GB | 8 GB and higher |
-| **GPU** | NVIDIA with 2 GB VRAM (or CPU mode) | NVIDIA RTX with 6 GB VRAM and higher |
-| **Disk Space** | ~500 MB | ~5 GB (including downloaded models) |
-| **OS** | Windows 10/11 (64-bit) | Windows 10/11 (64-bit) |
+1. Запустите `WhisperTranscriber.exe` (или `python main.py` в режиме разработки).
+2. **Откройте проект** (файл .wiproject) или **создайте проект** (выберите папку).
+3. Нажмите **«Добавить файл»** и выберите аудио/видео или запишите с микрофона / загрузите с YouTube.
+4. Выберите модель (например, `base` — быстрее, `large-v3` — точнее) и при необходимости включите словари во вкладке «Настройки» → «Словари».
+5. Нажмите **«Старт»** для транскрипции.
+6. После завершения используйте **«Экспорт в TXT»** или **«Коррекция через Ollama»** при необходимости.
+7. Сохраните проект (**«Сохранить проект»**), чтобы зафиксировать транскрипты и набор словарей.
 
-**Important Note:**
-For hardware acceleration (GPU mode), you must have up-to-date **NVIDIA** drivers installed. If a compatible GPU is not detected, the program will automatically switch to CPU mode, which is significantly slower.
+## Системные требования
 
-No additional software (Python, libraries, CUDA Toolkit) needs to be installed — everything required is included in the build.
+| Параметр | Минимум (tiny/base) | Рекомендуется (large-v3) |
+| --- | --- | --- |
+| **CPU** | 2 ядра (Intel i3 / Ryzen 3) | 4+ ядра (i5 / Ryzen 5) |
+| **RAM** | 4 ГБ | 8 ГБ и более |
+| **GPU** | NVIDIA с 2 ГБ VRAM (или режим CPU) | NVIDIA RTX с 6+ ГБ VRAM |
+| **Диск** | ~500 МБ | ~5 ГБ (с учётом моделей) |
+| **ОС** | Windows 10/11 (64-bit) | Windows 10/11 (64-bit) |
 
-## Project Structure
-- `main.py` - main interface (CustomTkinter).
-- `TranscriptionService.py` - Whisper logic and DLL setup.
-- `ExportService.py` - result saving logic.
-- `build.py` - EXE build script.
-- `models/` - folder where models will be downloaded.
+Для работы на GPU нужны актуальные драйверы **NVIDIA**. При отсутствии подходящей видеокарты используется режим CPU (медленнее).
 
-## Optional: YouTube and microphone import
-- **YouTube**: Paste a YouTube link and click "Load" to download audio, then transcribe as usual. Uses `yt-dlp`; FFmpeg for conversion to MP3 is provided by `imageio-ffmpeg` (no manual PATH setup). Install: `pip install yt-dlp imageio-ffmpeg` or use `requirements.txt`.
-- **Microphone**: Record from the microphone, then transcribe. Requires `sounddevice` and `soundfile` (`pip install sounddevice soundfile`).
+## Структура проекта
 
-## Technical Details
-- **Technologies**: Python 3.13, CustomTkinter, faster-whisper.
-- **Portability**: All dependencies (including CUDA DLLs) are packed into the EXE. Models are stored in the `models` folder next to the EXE.
-- **Development dependencies**: See `requirements.txt` for optional features (YouTube, mic).
+- `main.py` — главное окно и логика UI (CustomTkinter).
+- `TranscriptionService.py` — вызов Whisper и настройка DLL.
+- `SessionService.py` — сохранение/загрузка проектов (.wiproject).
+- `DictionaryService.py` — глобальные словари, prompt и постобработка.
+- `GlossaryService.py` — совместимость со старым форматом глоссария.
+- `ExportService.py` — экспорт в TXT и др.
+- `OllamaService.py` — коррекция через Ollama.
+- `i18n.py` — локализация и конфиг (wi_config.json, папка словарей).
+- `build.py` — скрипт сборки EXE.
+- `models/` — папка загружаемых моделей Whisper.
+- `locales/` — файлы переводов (en, ru, es, kk).
+
+## Дополнительные зависимости
+
+- **YouTube и микрофон**: `pip install yt-dlp imageio-ffmpeg sounddevice soundfile` (или см. `requirements.txt`).
+- **Воспроизведение сегментов**: `pip install pygame`.
+- **Системная громкость микрофона (Windows)**: `pip install pycaw` (опционально).
+
+## История изменений
+
+Список изменений после первого коммита с кратким описанием добавленного функционала приведён в файле **[CHANGELOG_AFTER_FIRST.md](CHANGELOG_AFTER_FIRST.md)**. В начале файла указан последний учтённый коммит для последующего отслеживания.
+
+## Технические детали
+
+- **Стек**: Python 3.13, CustomTkinter, faster-whisper.
+- **Портативность**: зависимости (в т.ч. CUDA DLL) упаковываются в EXE. Модели хранятся в папке `models` рядом с исполняемым файлом. Конфиг и папка глобальных словарей — рядом с EXE или со скриптом.

@@ -30,8 +30,15 @@ crash_log.txt
 # User config (locale etc.)
 wi_config.json
 
+# Global dictionaries (user data, created at runtime)
+dictionaries/
+
 # Splash screen image (generated during build)
 splash.png
 
 # Results
 *.txt
+
+# IDE
+.vscode/
+.cursor/

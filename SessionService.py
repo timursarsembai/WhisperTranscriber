@@ -34,6 +34,10 @@ class SessionData:
     glossary_path: Optional[str] = None
     # Включённые глобальные словари (ID = имена файлов в папке dictionaries)
     enabled_dictionary_ids: Optional[List[str]] = None
+    # Применять исправления из словарей после транскрипции
+    apply_corrections_post: Optional[bool] = None
+    # Пресеты словарей: [{"name": str, "dictionary_ids": list}, ...]
+    dictionary_presets: Optional[List[dict]] = None
     # Версия схемы
     version: int = SCHEMA_VERSION
     # v2: транскрипты по всем файлам (ключ — относительный путь от папки проекта)
@@ -56,13 +60,18 @@ class SessionData:
             d.pop("current_file_rel", None)
         if d.get("enabled_dictionary_ids") is None:
             d.pop("enabled_dictionary_ids", None)
+        if d.get("apply_corrections_post") is None:
+            d.pop("apply_corrections_post", None)
+        if d.get("dictionary_presets") is None:
+            d.pop("dictionary_presets", None)
         return d
 
     @classmethod
     def from_dict(cls, data: dict) -> "SessionData":
         known = {
             "audio_path", "transcript", "created_at", "updated_at",
-            "model_used", "edit_history", "glossary_path", "enabled_dictionary_ids", "version",
+            "model_used", "edit_history", "glossary_path", "enabled_dictionary_ids",
+            "apply_corrections_post", "dictionary_presets", "version",
             "file_transcripts", "current_file_rel",
         }
         filtered = {k: v for k, v in data.items() if k in known}
@@ -189,6 +198,8 @@ class SessionService:
         model_used: str = "",
         glossary_path: Optional[str] = None,
         enabled_dictionary_ids: Optional[List[str]] = None,
+        apply_corrections_post: Optional[bool] = None,
+        dictionary_presets: Optional[List[dict]] = None,
         project_path: Optional[str] = None,
         file_transcripts: Optional[Dict[str, List[dict]]] = None,
         current_file_rel: Optional[str] = None,
@@ -201,6 +212,8 @@ class SessionService:
             model_used=model_used,
             glossary_path=glossary_path,
             enabled_dictionary_ids=enabled_dictionary_ids or None,
+            apply_corrections_post=apply_corrections_post,
+            dictionary_presets=dictionary_presets if dictionary_presets else None,
         )
         if project_path is not None and file_transcripts is not None:
             s.file_transcripts = dict(file_transcripts)

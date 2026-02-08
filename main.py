@@ -114,7 +114,6 @@ class DarkScrollbar(Canvas):
 
 from ExportService import ExportService
 from SessionService import SessionService
-from GlossaryService import GlossaryService, GlossaryData
 from DictionaryService import DictionaryService, DictionaryData
 from OllamaService import OllamaService
 from AudioPlaybackService import AudioPlaybackService
@@ -221,8 +220,6 @@ class App(ctk.CTk):
         self.current_session_path = None  # путь к открытому/сохранённому .wiproject
         self.current_project_dir = None  # папка проекта (для нового проекта или папка с .wiproject)
         self._session_dirty = False  # были ли изменения после последнего сохранения
-        self.current_glossary_path = None
-        self.current_glossary = None  # GlossaryData or None (legacy)
         self.enabled_dictionary_ids = []  # IDs of global dictionaries enabled for this project
         self.file_transcripts = {}  # rel_path -> list of segments (multi-file project state)
 
@@ -509,10 +506,10 @@ class App(ctk.CTk):
             variable=self._settings_tab_var,
             command=self._on_settings_tab_changed,
         )
-        self._settings_tab_buttons.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 6))
+        self._settings_tab_buttons.grid(row=0, column=0, sticky="ew", padx=6, pady=(10, 6))
         # Контейнер контента вкладок
         self._settings_tab_content = ctk.CTkFrame(self._right_panel, fg_color="transparent")
-        self._settings_tab_content.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
+        self._settings_tab_content.grid(row=1, column=0, sticky="nsew", padx=6, pady=(0, 10))
         self._settings_tab_content.grid_columnconfigure(0, weight=1)
         self._settings_tab_content.grid_rowconfigure(0, weight=1)
         # Три фрейма контента в одной ячейке, переключаем grid/grid_remove
@@ -524,7 +521,7 @@ class App(ctk.CTk):
         self._tab_glossary.grid(row=0, column=0, sticky="nsew")
         self._tab_glossary.grid_remove()
         self._tab_glossary.grid_columnconfigure(0, weight=1)
-        self._tab_glossary.grid_rowconfigure(1, weight=1)
+        self._tab_glossary.grid_rowconfigure(0, weight=1)
         self._dictionaries_panel_built = False
         self._refresh_dictionaries_ui = lambda: None
         self._tab_interface = ctk.CTkFrame(self._settings_tab_content, fg_color="transparent")
@@ -1060,11 +1057,11 @@ class App(ctk.CTk):
         def _add_hr():
             nonlocal row
             hr = ctk.CTkFrame(win, height=2, fg_color=_hr_color)
-            hr.grid(row=row, column=0, sticky="ew", padx=10, pady=(8, 4))
+            hr.grid(row=row, column=0, sticky="ew", padx=6, pady=(8, 4))
             row += 1
 
         self._lbl_model = ctk.CTkLabel(win, text=t("settings.model"), font=ctk.CTkFont(weight="bold"))
-        self._lbl_model.grid(row=row, column=0, sticky="w", padx=10, pady=(10, 2))
+        self._lbl_model.grid(row=row, column=0, sticky="w", padx=6, pady=(10, 2))
         row += 1
         model_opts = [
             ("tiny", "model.tiny.desc"),
@@ -1076,12 +1073,12 @@ class App(ctk.CTk):
         _cfg = load_config()
         self._settings_model_value = _cfg.get("transcription_model") or "base"
         self._model_selection_label = ctk.CTkLabel(win, text=t("settings.selection", value=self._settings_model_value), font=ctk.CTkFont(weight="bold"), anchor="w")
-        self._model_selection_label.grid(row=row, column=0, sticky="w", padx=10, pady=(4, 2))
+        self._model_selection_label.grid(row=row, column=0, sticky="w", padx=6, pady=(4, 2))
         row += 1
         _list_block_w = 260
         model_list_container = ctk.CTkFrame(win, fg_color=("gray90", "gray25"))
         self._model_list_container = model_list_container
-        model_list_container.grid(row=row, column=0, sticky="ew", padx=10, pady=(0, 8))
+        model_list_container.grid(row=row, column=0, sticky="ew", padx=6, pady=(0, 8))
         model_list_container.grid_columnconfigure(0, weight=1)
         _model_inner = ctk.CTkFrame(model_list_container, fg_color="transparent")
         _model_inner.pack(fill="x", padx=0, pady=0)
@@ -1155,10 +1152,10 @@ class App(ctk.CTk):
         row += 1
         _add_hr()
         self._lbl_language = ctk.CTkLabel(win, text=t("settings.language"), font=ctk.CTkFont(weight="bold"))
-        self._lbl_language.grid(row=row, column=0, sticky="w", padx=10, pady=(10, 2))
+        self._lbl_language.grid(row=row, column=0, sticky="w", padx=6, pady=(10, 2))
         row += 1
         self._lbl_language_hint = ctk.CTkLabel(win, text=t("settings.language_hint"), font=_hint_font, text_color=_hint_color, wraplength=240, justify="left")
-        self._lbl_language_hint.grid(row=row, column=0, sticky="w", padx=10, pady=(0, 2))
+        self._lbl_language_hint.grid(row=row, column=0, sticky="w", padx=6, pady=(0, 2))
         row += 1
         saved_code = _cfg.get("transcription_language")  # None = Auto
         if saved_code is not None and not isinstance(saved_code, str):
@@ -1176,14 +1173,14 @@ class App(ctk.CTk):
             else:
                 self._settings_language_value = "Auto"
         self._lang_selection_label = ctk.CTkLabel(win, text=t("settings.selection", value=self._settings_language_value), font=ctk.CTkFont(weight="bold"), anchor="w")
-        self._lang_selection_label.grid(row=row, column=0, sticky="w", padx=10, pady=(4, 2))
+        self._lang_selection_label.grid(row=row, column=0, sticky="w", padx=6, pady=(4, 2))
         row += 1
         # Language list: Canvas + inner frame + scrollbar (та же ширина блока, что у списка моделей)
         _lang_box_h, _lang_box_w = 140, _list_block_w
         _scrollbar_w = 16
         lang_list_container = ctk.CTkFrame(win, width=_lang_box_w, height=_lang_box_h, fg_color=("gray90", "gray25"))
         self._lang_list_container = lang_list_container
-        lang_list_container.grid(row=row, column=0, sticky="w", padx=10, pady=(0, 8))
+        lang_list_container.grid(row=row, column=0, sticky="w", padx=6, pady=(0, 8))
         lang_list_container.grid_propagate(False)
         lang_list_container.grid_columnconfigure(0, weight=1)
         _canvas_bg = lang_list_container.cget("fg_color")
@@ -1241,13 +1238,13 @@ class App(ctk.CTk):
         row += 1
         _add_hr()
         self._lbl_beam_size = ctk.CTkLabel(win, text=t("settings.beam_size"), font=ctk.CTkFont(weight="bold"))
-        self._lbl_beam_size.grid(row=row, column=0, sticky="w", padx=10, pady=(10, 2))
+        self._lbl_beam_size.grid(row=row, column=0, sticky="w", padx=6, pady=(10, 2))
         row += 1
         self._lbl_beam_size_hint = ctk.CTkLabel(win, text=t("settings.beam_size_hint"), font=_hint_font, text_color=_hint_color, wraplength=240, justify="left")
-        self._lbl_beam_size_hint.grid(row=row, column=0, sticky="w", padx=10, pady=(0, 2))
+        self._lbl_beam_size_hint.grid(row=row, column=0, sticky="w", padx=6, pady=(0, 2))
         row += 1
         beam_row = ctk.CTkFrame(win, fg_color="transparent")
-        beam_row.grid(row=row, column=0, sticky="w", padx=10, pady=(0, 8))
+        beam_row.grid(row=row, column=0, sticky="w", padx=6, pady=(0, 8))
         beam_row.grid_columnconfigure(0, weight=1)
         _beam_val = max(1, min(10, int(_cfg.get("transcription_beam_size", 5))))
         self._settings_beam_size = ctk.CTkSlider(beam_row, from_=1, to=10, number_of_steps=9, width=220, command=self._on_beam_size_change)
@@ -1262,18 +1259,18 @@ class App(ctk.CTk):
             self._settings_vad.select()
         else:
             self._settings_vad.deselect()
-        self._settings_vad.grid(row=row, column=0, sticky="w", padx=10, pady=8)
+        self._settings_vad.grid(row=row, column=0, sticky="w", padx=6, pady=8)
         row += 1
         _add_hr()
         self._lbl_task = ctk.CTkLabel(win, text=t("settings.task"), font=ctk.CTkFont(weight="bold"))
-        self._lbl_task.grid(row=row, column=0, sticky="w", padx=10, pady=(10, 2))
+        self._lbl_task.grid(row=row, column=0, sticky="w", padx=6, pady=(10, 2))
         row += 1
         self._lbl_task_hint = ctk.CTkLabel(win, text=t("settings.task_hint"), font=_hint_font, text_color=_hint_color, wraplength=240, justify="left")
-        self._lbl_task_hint.grid(row=row, column=0, sticky="w", padx=10, pady=(0, 2))
+        self._lbl_task_hint.grid(row=row, column=0, sticky="w", padx=6, pady=(0, 2))
         row += 1
         self._task_var = StringVar(value=_cfg.get("transcription_task") or "transcribe")
         self._settings_task = ctk.CTkSegmentedButton(win, values=["transcribe", "translate"], variable=self._task_var)
-        self._settings_task.grid(row=row, column=0, padx=10, pady=(0, 8), sticky="w")
+        self._settings_task.grid(row=row, column=0, padx=6, pady=(0, 8), sticky="w")
         row += 1
 
         self._settings_word_ts = ctk.CTkCheckBox(win, text=t("settings.word_timestamps"), command=lambda: self._save_transcription_settings())
@@ -1281,30 +1278,30 @@ class App(ctk.CTk):
             self._settings_word_ts.select()
         else:
             self._settings_word_ts.deselect()
-        self._settings_word_ts.grid(row=row, column=0, sticky="w", padx=10, pady=8)
+        self._settings_word_ts.grid(row=row, column=0, sticky="w", padx=6, pady=8)
         row += 1
         _add_hr()
         self._lbl_device = ctk.CTkLabel(win, text=t("settings.device"), font=ctk.CTkFont(weight="bold"))
-        self._lbl_device.grid(row=row, column=0, sticky="w", padx=10, pady=(10, 2))
+        self._lbl_device.grid(row=row, column=0, sticky="w", padx=6, pady=(10, 2))
         row += 1
         self._device_var = StringVar(value=_cfg.get("transcription_device") or "auto")
         self._settings_device = ctk.CTkSegmentedButton(win, values=["auto", "cuda", "cpu"], variable=self._device_var)
-        self._settings_device.grid(row=row, column=0, padx=10, pady=(0, 8), sticky="w")
+        self._settings_device.grid(row=row, column=0, padx=6, pady=(0, 8), sticky="w")
         row += 1
         _add_hr()
         self._lbl_compute_type = ctk.CTkLabel(win, text=t("settings.compute_type"), font=ctk.CTkFont(weight="bold"))
-        self._lbl_compute_type.grid(row=row, column=0, sticky="w", padx=10, pady=(10, 2))
+        self._lbl_compute_type.grid(row=row, column=0, sticky="w", padx=6, pady=(10, 2))
         row += 1
         self._lbl_compute_type_hint = ctk.CTkLabel(win, text=t("settings.compute_type_hint"), font=_hint_font, text_color=_hint_color, wraplength=240, justify="left")
-        self._lbl_compute_type_hint.grid(row=row, column=0, sticky="w", padx=10, pady=(0, 2))
+        self._lbl_compute_type_hint.grid(row=row, column=0, sticky="w", padx=6, pady=(0, 2))
         row += 1
         self._compute_var = StringVar(value=_cfg.get("transcription_compute_type") or "float16")
         self._settings_compute = ctk.CTkSegmentedButton(win, values=["float16", "int8"], variable=self._compute_var)
-        self._settings_compute.grid(row=row, column=0, padx=10, pady=(0, 8), sticky="w")
+        self._settings_compute.grid(row=row, column=0, padx=6, pady=(0, 8), sticky="w")
         row += 1
         _add_hr()
         self._btn_reset_transcription = ctk.CTkButton(win, text=t("settings.reset_to_default"), fg_color=("gray75", "gray35"), command=self._reset_transcription_settings)
-        self._btn_reset_transcription.grid(row=row, column=0, padx=10, pady=(10, 12), sticky="ew")
+        self._btn_reset_transcription.grid(row=row, column=0, padx=6, pady=(10, 12), sticky="ew")
         row += 1
 
         self._task_var.trace_add("write", lambda *a: app._save_transcription_settings())
@@ -1373,9 +1370,20 @@ class App(ctk.CTk):
         )
         # Вкладки настроек: обновить названия и текущую вкладку
         if hasattr(self, "_settings_tab_buttons"):
-            tabs = [t("tabs.transcription"), t("tabs.glossary"), t("tabs.interface")]
+            tabs = [t("tabs.transcription"), t("tabs.dictionaries"), t("tabs.interface")]
             self._settings_tab_buttons.configure(values=tabs)
             self._settings_tab_var.set(tabs[self._settings_tab_index])
+        # Словари: панель строится с t() при создании — при смене языка пересобрать, чтобы подтянуть новую локаль
+        if getattr(self, "_dictionaries_panel_built", False):
+            for w in list(self._tab_glossary.winfo_children()):
+                try:
+                    w.destroy()
+                except Exception:
+                    pass
+            self._dictionaries_panel_built = False
+        if self._settings_tab_index == 1:
+            self._build_dictionaries_panel(self._tab_glossary)
+            self._dictionaries_panel_built = True
         # Транскрибация: все надписи
         for key, attr in [
             ("settings.model", "_lbl_model"),
@@ -1419,8 +1427,8 @@ class App(ctk.CTk):
         # Глоссарий
         if getattr(self, "_refresh_dictionaries_ui", None):
             self._refresh_dictionaries_ui()
-        if hasattr(self, "_dict_apply_post_cb"):
-            self._dict_apply_post_cb.configure(text=t("dictionaries.apply_corrections_post"))
+        if hasattr(self, "_dict_apply_post_label"):
+            self._dict_apply_post_label.configure(text=t("dictionaries.apply_corrections_post"))
         # Интерфейс: язык UI
         if hasattr(self, "_interface_lang_lbl"):
             self._interface_lang_lbl.configure(text=t("interface.language"))
@@ -1435,27 +1443,25 @@ class App(ctk.CTk):
                 children[1].configure(text=t(f"lang.{code}"))
 
     def _build_interface_settings_panel(self, parent):
-        """Вкладка Interface: язык UI в виде списка как Модели (en, es, ru, kk), позже — тема."""
-        scroll = ctk.CTkScrollableFrame(parent, fg_color="transparent")
-        scroll.grid(row=0, column=0, sticky="nsew")
-        scroll.grid_columnconfigure(0, weight=1)
-        win = ctk.CTkFrame(scroll, fg_color="transparent")
-        win.grid(row=0, column=0, sticky="nsew", padx=(0, 0), pady=0)
+        """Вкладка Interface: язык UI в виде списка как Модели (en, es, ru, kk), позже — тема. Без вертикального скролла."""
+        parent.grid_rowconfigure(0, weight=0)
+        win = ctk.CTkFrame(parent, fg_color="transparent")
+        win.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
         win.grid_columnconfigure(0, weight=1)
 
         row = 0
         self._interface_lang_lbl = ctk.CTkLabel(win, text=t("interface.language"), font=ctk.CTkFont(weight="bold"))
-        self._interface_lang_lbl.grid(row=row, column=0, sticky="w", padx=10, pady=(10, 2))
+        self._interface_lang_lbl.grid(row=row, column=0, sticky="w", padx=6, pady=(10, 2))
         row += 1
         _cur = get_locale()
         self._interface_selection_label = ctk.CTkLabel(
             win, text=t("settings.selection", value=(LANG_FLAGS.get(_cur, "") + " " + t(f"lang.{_cur}")).strip()),
             font=ctk.CTkFont(weight="bold"), anchor="w"
         )
-        self._interface_selection_label.grid(row=row, column=0, sticky="w", padx=10, pady=(4, 2))
+        self._interface_selection_label.grid(row=row, column=0, sticky="w", padx=6, pady=(4, 2))
         row += 1
         interface_list_container = ctk.CTkFrame(win, fg_color=("gray90", "gray25"))
-        interface_list_container.grid(row=row, column=0, sticky="ew", padx=10, pady=(0, 8))
+        interface_list_container.grid(row=row, column=0, sticky="ew", padx=6, pady=(0, 8))
         interface_list_container.grid_columnconfigure(0, weight=1)
         interface_inner = ctk.CTkFrame(interface_list_container, fg_color="transparent")
         interface_inner.pack(fill="x", padx=0, pady=0)
@@ -1502,6 +1508,10 @@ class App(ctk.CTk):
         self._interface_selection_label.configure(text=t("settings.selection", value=(LANG_FLAGS.get(current, "") + " " + t(f"lang.{current}")).strip()))
         for c, rf in self._interface_row_frames.items():
             rf.configure(fg_color=_ui_hover_fg if c == current else "transparent")
+        # Кнопка перезапуска приложения (чтобы подхватить изменения без ручного закрытия)
+        row += 1
+        restart_btn = ctk.CTkButton(win, text=t("interface.restart_app"), width=220, command=self._restart_app)
+        restart_btn.grid(row=row, column=0, sticky="w", padx=6, pady=(16, 10))
         # Место под тему (светлая/тёмная) — позже
         # ctk.CTkLabel(win, text=t("interface.theme")).grid(...)
 
@@ -1510,6 +1520,20 @@ class App(ctk.CTk):
         set_locale(code)
         save_locale_preference(code)
         self._refresh_ui()
+
+    def _restart_app(self):
+        """Перезапустить приложение: запуск нового процесса и закрытие текущего окна (чтобы подхватить изменения кода/конфига)."""
+        try:
+            cmd = [sys.executable]
+            if getattr(sys, "frozen", False):
+                cmd.extend(sys.argv[1:])
+            else:
+                cmd.extend(sys.argv)
+            subprocess.Popen(cmd, cwd=os.getcwd())
+        except Exception as e:
+            messagebox.showerror("", f"Could not restart: {e}")
+            return
+        self.after(150, self.destroy)
 
     def _strip_tail_hallucinations(self, segments):
         """Удалить типичные галлюцинации Whisper в конце: кредиты, «субтитры создавал …», и т.п."""
@@ -1858,8 +1882,9 @@ class App(ctk.CTk):
             audio_path=self.current_file,
             transcript=transcript_for_save,
             model_used=self._settings_model_value,
-            glossary_path=self.current_glossary_path,
             enabled_dictionary_ids=self.enabled_dictionary_ids or None,
+            apply_corrections_post=getattr(self, "_dict_apply_post_var", None) and self._dict_apply_post_var.get(),
+            dictionary_presets=load_config().get("dictionary_presets") or [],
             project_path=path,
             file_transcripts=file_transcripts_to_save,
             current_file_rel=current_rel,
@@ -1937,16 +1962,15 @@ class App(ctk.CTk):
         enabled_ids = getattr(session, "enabled_dictionary_ids", None)
         if enabled_ids and len(enabled_ids) > 0:
             self.enabled_dictionary_ids = list(enabled_ids)
-            self.current_glossary_path = None
-            self.current_glossary = None
         else:
             self.enabled_dictionary_ids = []
-            self.current_glossary_path = session.glossary_path
-            if session.glossary_path and os.path.exists(session.glossary_path):
-                loaded = GlossaryService.load(session.glossary_path)
-                self.current_glossary = loaded if loaded else None
-            else:
-                self.current_glossary = None
+        apply_post = getattr(session, "apply_corrections_post", None)
+        if apply_post is not None and getattr(self, "_dict_apply_post_var", None):
+            self._dict_apply_post_var.set(bool(apply_post))
+            save_config({"apply_corrections_post": bool(apply_post)})
+        presets = getattr(session, "dictionary_presets", None)
+        if presets is not None:
+            save_config({"dictionary_presets": list(presets)})
         if getattr(self, "_refresh_dictionaries_ui", None):
             def _do_refresh_dict_ui():
                 try:
@@ -1956,7 +1980,7 @@ class App(ctk.CTk):
             self.after(0, _do_refresh_dict_ui)
 
     def _get_initial_prompt_text(self):
-        """Initial prompt for Whisper: from enabled global dictionaries or legacy glossary."""
+        """Initial prompt for Whisper: from enabled global dictionaries."""
         if self.enabled_dictionary_ids:
             dicts = []
             for did in self.enabled_dictionary_ids:
@@ -1965,16 +1989,14 @@ class App(ctk.CTk):
                     dicts.append(d)
             if dicts:
                 return DictionaryService.build_initial_prompt_text(dicts) or None
-        if self.current_glossary and self.current_glossary.entries:
-            return GlossaryService.get_initial_prompt_text(self.current_glossary) or None
         return None
 
     def _has_dictionaries(self):
-        """True if any dictionaries/glossary are available for transcription."""
-        return bool(self.enabled_dictionary_ids) or bool(self.current_glossary)
+        """True if any dictionaries are available for transcription."""
+        return bool(self.enabled_dictionary_ids)
 
     def _get_correction_entries_for_post(self):
-        """Correction entries for post-processing: from enabled dicts + legacy glossary."""
+        """Correction entries for post-processing: from enabled dicts."""
         entries = []
         if self.enabled_dictionary_ids:
             dicts = []
@@ -1983,10 +2005,6 @@ class App(ctk.CTk):
                 if d:
                     dicts.append(d)
             entries.extend(DictionaryService.get_correction_entries_from_dictionaries(dicts))
-        if self.current_glossary and self.current_glossary.entries:
-            for e in self.current_glossary.entries:
-                if (e.original or "").strip() and (e.corrected or "").strip():
-                    entries.append({"original": e.original, "corrected": e.corrected})
         return entries
 
     def _build_dictionaries_panel(self, parent):
@@ -1995,79 +2013,317 @@ class App(ctk.CTk):
         win.grid_columnconfigure(0, weight=1)
         self._selected_dictionary_id = None
         self._dict_rename_pending_id = None  # id словаря, для которого показывается поле ввода имени
+        self._dict_editing_entry_index = None  # индекс записи в режиме редактирования (correction)
         from DictionaryService import TYPE_CORRECTION, TYPE_TERMS
 
-        main_scroll = ctk.CTkScrollableFrame(win, fg_color="transparent")
-        main_scroll.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        def _sanitize_dict_filename(display_name: str) -> str:
+            """Из отображаемого имени словаря формирует безопасное имя файла (без расширения)."""
+            s = (display_name or "").strip()
+            if not s:
+                return "dictionary"
+            for ch in r'\/:*?"<>|':
+                s = s.replace(ch, "_")
+            s = re.sub(r"\s+", "_", s)
+            s = re.sub(r"_+", "_", s).strip("_")
+            s = s[:100] if len(s) > 100 else s
+            return s or "dictionary"
+
+        main_scroll = ctk.CTkFrame(win, fg_color="transparent")
+        main_scroll.grid(row=0, column=0, sticky="nsew", pady=10)
         main_scroll.grid_columnconfigure(0, weight=1)
+        main_scroll.grid_rowconfigure(0, weight=1)
+        dict_tabview = ctk.CTkTabview(main_scroll, fg_color="transparent")
+        dict_tabview.grid(row=0, column=0, sticky="nsew", padx=6)
+        tab_dictionaries = dict_tabview.add(t("dictionaries.tab_dictionaries"))
+        tab_presets = dict_tabview.add(t("dictionaries.tab_presets"))
+        tab_import = dict_tabview.add(t("dictionaries.tab_import"))
+        tab_dictionaries.grid_columnconfigure(0, weight=1)
+        tab_presets.grid_columnconfigure(0, weight=1)
+        tab_import.grid_columnconfigure(0, weight=1)
 
-        # --- Block 1: Global dictionaries ---
-        bl1 = ctk.CTkFrame(main_scroll, fg_color="transparent")
-        bl1.grid(row=0, column=0, sticky="ew", pady=(0, 5))
-        bl1.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(bl1, text=t("dictionaries.global_list"), font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, sticky="w", padx=(0, 10), pady=2)
-        btn_row1 = ctk.CTkFrame(bl1, fg_color="transparent")
-        btn_row1.grid(row=0, column=1, sticky="e")
-        self._dict_btn_add = ctk.CTkButton(btn_row1, text=t("dictionaries.add"), width=100, command=lambda: None)
-        self._dict_btn_add.grid(row=0, column=0, padx=2)
-        self._dict_btn_open_folder = ctk.CTkButton(btn_row1, text=t("dictionaries.open_folder"), width=100, command=lambda: None)
-        self._dict_btn_open_folder.grid(row=0, column=1, padx=2)
-        self._dict_btn_refresh = ctk.CTkButton(btn_row1, text=t("dictionaries.refresh"), width=80, command=lambda: None)
-        self._dict_btn_refresh.grid(row=0, column=2, padx=2)
+        # --- Tab «Словари»: два раздела (второй скрыт). Раздел 1: список + форма добавления. Раздел 2: редактор записей. ---
+        tab_dictionaries.grid_columnconfigure(0, weight=1)
+        tab_dictionaries.grid_rowconfigure(0, weight=1)
+        tab_dictionaries.grid_rowconfigure(1, weight=0)
+        tab_dictionaries.grid_rowconfigure(2, weight=0)
 
-        dict_list_frame = ctk.CTkScrollableFrame(main_scroll, fg_color="transparent", height=120)
-        dict_list_frame.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        _dict_section1 = ctk.CTkFrame(tab_dictionaries, fg_color=("gray92", "gray22"), corner_radius=8)
+        _dict_section1.grid(row=0, column=0, sticky="nsew", padx=6, pady=(0, 4))
+        _dict_section1.grid_columnconfigure(0, weight=1)
+        _dict_section1.grid_rowconfigure(2, weight=1)
+        ctk.CTkLabel(_dict_section1, text=t("dictionaries.global_list"), font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, sticky="w", padx=6, pady=(4, 2))
+        ctk.CTkLabel(_dict_section1, text=t("dictionaries.section_global_desc"), font=ctk.CTkFont(size=12), text_color=("gray40", "gray55"), anchor="w", wraplength=280, justify="left").grid(row=1, column=0, sticky="ew", padx=6, pady=(0, 2))
+        def _bind_mousewheel_to_scrollable_frame(sf):
+            """Привязка прокрутки колесиком мыши к CTkScrollableFrame (через внутренний canvas)."""
+            try:
+                canvas = getattr(sf, "_parent_canvas", None)
+                if canvas is None:
+                    return
+                def _on_mousewheel(event):
+                    try:
+                        delta = getattr(event, "delta", 0) or (120 if getattr(event, "num", 0) == 4 else -120 if getattr(event, "num", 0) == 5 else 0)
+                        units = int(-1 * (delta / 120)) if abs(delta) > 0 else 0
+                        if units:
+                            canvas.yview_scroll(units, "units")
+                    except Exception:
+                        pass
+                for w in (canvas, sf):
+                    w.bind("<MouseWheel>", _on_mousewheel)
+                    w.bind("<Button-4>", _on_mousewheel)
+                    w.bind("<Button-5>", _on_mousewheel)
+            except Exception:
+                pass
+
+        dict_list_frame = ctk.CTkScrollableFrame(_dict_section1, fg_color=("gray90", "gray20"), corner_radius=6)
+        dict_list_frame.grid(row=2, column=0, sticky="nsew", pady=(0, 6))
         dict_list_frame.grid_columnconfigure(0, weight=1)
+        _bind_mousewheel_to_scrollable_frame(dict_list_frame)
+        _dict_add_form = ctk.CTkFrame(_dict_section1, fg_color="transparent")
+        _dict_add_form.grid(row=3, column=0, sticky="ew", pady=(0, 4))
+        _dict_add_form.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(_dict_add_form, text=t("dictionaries.choose_type_label")).grid(row=0, column=0, sticky="w", padx=6, pady=(0, 2))
+        self._dict_new_type_var = StringVar(value="correction")  # внутренние значения: "correction" | "terms"
+        _dict_type_radio_frame = ctk.CTkFrame(_dict_add_form, fg_color="transparent")
+        _dict_type_radio_frame.grid(row=1, column=0, sticky="w", padx=6, pady=(0, 4))
+        self._dict_new_type_radio_correction = ctk.CTkRadioButton(
+            _dict_type_radio_frame, text=t("dictionaries.type_correction"),
+            variable=self._dict_new_type_var, value="correction",
+            font=ctk.CTkFont(size=14), radiobutton_width=20, radiobutton_height=20
+        )
+        self._dict_new_type_radio_correction.pack(side="left", padx=(0, 16), pady=2)
+        self._dict_new_type_radio_terms = ctk.CTkRadioButton(
+            _dict_type_radio_frame, text=t("dictionaries.type_terms"),
+            variable=self._dict_new_type_var, value="terms",
+            font=ctk.CTkFont(size=14), radiobutton_width=20, radiobutton_height=20
+        )
+        self._dict_new_type_radio_terms.pack(side="left", pady=2)
+        ctk.CTkLabel(_dict_add_form, text=t("dictionaries.dictionary_name_prompt")).grid(row=2, column=0, sticky="w", padx=6, pady=(4, 2))
+        self._dict_new_name_entry = ctk.CTkEntry(_dict_add_form, width=220)
+        self._dict_new_name_entry.grid(row=3, column=0, sticky="w", padx=6, pady=(0, 4))
+        self._dict_btn_add = ctk.CTkButton(_dict_add_form, text=t("dictionaries.add"), width=120, border_spacing=0, command=lambda: None)
+        self._dict_btn_add.grid(row=4, column=0, sticky="w", padx=6, pady=(4, 0))
 
-        editor_frame = ctk.CTkFrame(main_scroll, fg_color="transparent")
-        editor_frame.grid(row=2, column=0, sticky="ew", pady=(0, 8))
-        editor_frame.grid_columnconfigure(0, weight=1)
-        self._dict_editor_inner = ctk.CTkFrame(editor_frame, fg_color="transparent")
-        self._dict_editor_inner.grid(row=0, column=0, sticky="ew")
+        _dict_section2 = ctk.CTkFrame(tab_dictionaries, fg_color=("gray92", "gray22"), corner_radius=8)
+        _dict_section2.grid(row=1, column=0, sticky="nsew", padx=6, pady=(4, 4))
+        _dict_section2.grid_remove()
+        _dict_section2.grid_columnconfigure(0, weight=1)
+        _dict_section2.grid_rowconfigure(1, weight=0)
+        self._dict_section2_title = ctk.CTkLabel(_dict_section2, text="", font=ctk.CTkFont(weight="bold"))
+        self._dict_section2_title.grid(row=0, column=0, sticky="w", padx=6, pady=(4, 2))
+        self._dict_section2_desc = ctk.CTkLabel(_dict_section2, text="", font=ctk.CTkFont(size=12), text_color=("gray40", "gray55"), anchor="w", justify="left")
+        self._dict_section2_desc.grid(row=1, column=0, sticky="w", padx=6, pady=(0, 6))
+        self._dict_section2_desc.configure(wraplength=280)
+        _dict_section2.grid_rowconfigure(2, weight=1)
+        self._dict_editor_inner = ctk.CTkScrollableFrame(_dict_section2, fg_color=("gray90", "gray20"), corner_radius=6)
+        self._dict_editor_inner.grid(row=2, column=0, sticky="nsew", pady=(0, 6))
         self._dict_editor_inner.grid_columnconfigure(0, weight=1)
+        _bind_mousewheel_to_scrollable_frame(self._dict_editor_inner)
+        self._dict_editor_form = ctk.CTkFrame(_dict_section2, fg_color="transparent")
+        self._dict_editor_form.grid(row=3, column=0, sticky="ew", pady=(0, 4))
+        self._dict_editor_form.grid_columnconfigure(0, weight=1)
 
-        # --- Block 2: Enabled in this project ---
-        bl2 = ctk.CTkFrame(main_scroll, fg_color="transparent")
-        bl2.grid(row=3, column=0, sticky="ew", pady=(8, 5))
-        bl2.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(bl2, text=t("dictionaries.enabled_in_project"), font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, sticky="w", pady=2)
-        self._dict_enabled_list_frame = ctk.CTkFrame(main_scroll, fg_color="transparent")
-        self._dict_enabled_list_frame.grid(row=4, column=0, sticky="ew", pady=(0, 8))
-        self._dict_enabled_list_frame.grid_columnconfigure(0, weight=1)
-        self._dict_no_project_label = ctk.CTkLabel(self._dict_enabled_list_frame, text=t("dictionaries.open_project_to_enable"), text_color="gray")
-        self._dict_enabled_checkboxes = {}
-
-        # --- Block 3: Presets ---
-        bl3 = ctk.CTkFrame(main_scroll, fg_color="transparent")
-        bl3.grid(row=5, column=0, sticky="ew", pady=(8, 5))
-        bl3.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(bl3, text=t("dictionaries.presets"), font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, sticky="w", padx=(0, 10), pady=2)
-        preset_row = ctk.CTkFrame(bl3, fg_color="transparent")
-        preset_row.grid(row=0, column=1, sticky="ew")
-        preset_row.grid_columnconfigure(0, weight=1)
-        self._dict_preset_var = StringVar(value="")
-        self._dict_preset_option = ctk.CTkOptionMenu(preset_row, variable=self._dict_preset_var, values=[], width=180)
-        self._dict_preset_option.grid(row=0, column=0, padx=(0, 5))
-        self._dict_btn_apply_preset = ctk.CTkButton(preset_row, text=t("dictionaries.apply_preset"), width=100, command=lambda: None)
-        self._dict_btn_apply_preset.grid(row=0, column=1, padx=2)
-        self._dict_btn_save_preset = ctk.CTkButton(preset_row, text=t("dictionaries.save_as_preset"), width=140, command=lambda: None)
-        self._dict_btn_save_preset.grid(row=0, column=2, padx=2)
-
-        # --- Block 4: Apply corrections post ---
         self._dict_apply_post_var = ctk.BooleanVar(value=load_config().get("apply_corrections_post", False))
-        bl4 = ctk.CTkFrame(main_scroll, fg_color="transparent")
-        bl4.grid(row=6, column=0, sticky="w", pady=(8, 10))
-        self._dict_apply_post_cb = ctk.CTkCheckBox(bl4, text=t("dictionaries.apply_corrections_post"), variable=self._dict_apply_post_var, command=lambda: save_config({"apply_corrections_post": self._dict_apply_post_var.get()}))
-        self._dict_apply_post_cb.grid(row=0, column=0, sticky="w")
+
+        def _apply_post_toggle():
+            self._dict_apply_post_var.set(not self._dict_apply_post_var.get())
+            save_config({"apply_corrections_post": self._dict_apply_post_var.get()})
+
+        self._dict_apply_post_frame = ctk.CTkFrame(tab_dictionaries, fg_color="transparent")
+        self._dict_apply_post_frame.grid(row=2, column=0, sticky="w", padx=6, pady=(8, 10))
+        self._dict_apply_post_frame.grid_remove()  # показывается только при редактировании словаря «Исправления»
+        self._dict_apply_post_frame.grid_columnconfigure(1, weight=1)
+        self._dict_apply_post_cb = ctk.CTkCheckBox(self._dict_apply_post_frame, text="", width=24, variable=self._dict_apply_post_var, command=_apply_post_toggle)
+        self._dict_apply_post_cb.grid(row=0, column=0, sticky="nw", padx=(0, 6), pady=2)
+        self._dict_apply_post_label = ctk.CTkLabel(
+            self._dict_apply_post_frame, text=t("dictionaries.apply_corrections_post"),
+            font=ctk.CTkFont(size=14), anchor="w", justify="left", wraplength=260, cursor="hand2"
+        )
+        self._dict_apply_post_label.grid(row=0, column=1, sticky="w")
+        self._dict_apply_post_label.bind("<Button-1>", lambda e: _apply_post_toggle())
+
+        # --- Tab «Пресеты»: три раздела (третий скрыт по умолчанию), по высоте 50%/50% или 33%/33%/33% ---
+        self._preset_edit_name = None  # имя пресета, который редактируется в третьем разделе
+        tab_presets.grid_columnconfigure(0, weight=1)
+        tab_presets.grid_rowconfigure(0, weight=1)
+        tab_presets.grid_rowconfigure(1, weight=1)
+        tab_presets.grid_rowconfigure(2, weight=0)  # третий раздел скрыт — weight=0
+
+        _preset_tab_top = ctk.CTkFrame(tab_presets, fg_color=("gray92", "gray22"), corner_radius=8)
+        _preset_tab_top.grid(row=0, column=0, sticky="nsew", padx=6, pady=(0, 4))
+        _preset_tab_top.grid_columnconfigure(0, weight=1)
+        _preset_tab_top.grid_rowconfigure(2, weight=1)
+        ctk.CTkLabel(_preset_tab_top, text=t("presets.create_title"), font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, sticky="w", padx=6, pady=(4, 2))
+        ctk.CTkLabel(_preset_tab_top, text=t("presets.create_desc"), font=ctk.CTkFont(size=12), text_color=("gray40", "gray55"), anchor="w", wraplength=280, justify="left").grid(row=1, column=0, sticky="ew", padx=6, pady=(0, 2))
+        self._preset_tab_dict_list = ctk.CTkScrollableFrame(_preset_tab_top, fg_color=("gray90", "gray20"), corner_radius=6)
+        self._preset_tab_dict_list.grid(row=2, column=0, sticky="nsew", pady=(0, 4))
+        self._preset_tab_dict_list.grid_columnconfigure(0, weight=1)
+        _bind_mousewheel_to_scrollable_frame(self._preset_tab_dict_list)
+        self._dict_btn_save_preset = ctk.CTkButton(_preset_tab_top, text=t("dictionaries.save_as_preset"), width=220, border_spacing=0, command=lambda: None)
+        self._dict_btn_save_preset.grid(row=3, column=0, sticky="w", pady=(0, 4))
+
+        _preset_tab_middle = ctk.CTkFrame(tab_presets, fg_color=("gray92", "gray22"), corner_radius=8)
+        _preset_tab_middle.grid(row=1, column=0, sticky="nsew", padx=6, pady=(4, 4))
+        _preset_tab_middle.grid_columnconfigure(0, weight=1)
+        _preset_tab_middle.grid_rowconfigure(2, weight=1)
+        ctk.CTkLabel(_preset_tab_middle, text=t("presets.apply_title"), font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, sticky="w", padx=6, pady=(4, 2))
+        ctk.CTkLabel(_preset_tab_middle, text=t("presets.apply_desc"), font=ctk.CTkFont(size=12), text_color=("gray40", "gray55"), anchor="w", wraplength=280, justify="left").grid(row=1, column=0, sticky="ew", padx=6, pady=(0, 2))
+        self._preset_tab_preset_list = ctk.CTkScrollableFrame(_preset_tab_middle, fg_color=("gray90", "gray20"), corner_radius=6)
+        self._preset_tab_preset_list.grid(row=2, column=0, sticky="nsew")
+        self._preset_tab_preset_list.grid_columnconfigure(0, weight=1)
+        _bind_mousewheel_to_scrollable_frame(self._preset_tab_preset_list)
+
+        _preset_tab_edit = ctk.CTkFrame(tab_presets, fg_color=("gray92", "gray22"), corner_radius=8)
+        _preset_tab_edit.grid(row=2, column=0, sticky="nsew", padx=6, pady=(4, 0))
+        _preset_tab_edit.grid_remove()
+        _preset_tab_edit.grid_columnconfigure(0, weight=1)
+        _preset_tab_edit.grid_rowconfigure(2, weight=1)
+        ctk.CTkLabel(_preset_tab_edit, text=t("presets.edit_title"), font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, sticky="w", padx=6, pady=(4, 2))
+        ctk.CTkLabel(_preset_tab_edit, text=t("presets.edit_desc"), font=ctk.CTkFont(size=12), text_color=("gray40", "gray55"), anchor="w", wraplength=280, justify="left").grid(row=1, column=0, sticky="ew", padx=6, pady=(0, 2))
+        self._preset_tab_edit_dict_list = ctk.CTkScrollableFrame(_preset_tab_edit, fg_color=("gray90", "gray20"), corner_radius=6)
+        self._preset_tab_edit_dict_list.grid(row=2, column=0, sticky="nsew", pady=(0, 4))
+        self._preset_tab_edit_dict_list.grid_columnconfigure(0, weight=1)
+        _bind_mousewheel_to_scrollable_frame(self._preset_tab_edit_dict_list)
+        self._preset_btn_save_edit = ctk.CTkButton(_preset_tab_edit, text=t("presets.save_changes"), width=180, border_spacing=0, command=lambda: None)
+        self._preset_btn_save_edit.grid(row=3, column=0, sticky="w", pady=(0, 4))
+
+        # --- Tab «Импорт»: выбор файлов словарей и импорт ---
+        _import_frame = ctk.CTkFrame(tab_import, fg_color=("gray92", "gray22"), corner_radius=8)
+        _import_frame.grid(row=0, column=0, sticky="nsew", padx=6, pady=(0, 4))
+        _import_frame.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(_import_frame, text=t("dictionaries.import_title"), font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, sticky="w", padx=6, pady=(4, 2))
+        ctk.CTkLabel(_import_frame, text=t("dictionaries.import_format_desc"), font=ctk.CTkFont(size=12), text_color=("gray40", "gray55"), anchor="w", justify="left", wraplength=280).grid(row=1, column=0, sticky="w", padx=6, pady=(0, 8))
+        self._import_btn_select = ctk.CTkButton(_import_frame, text=t("dictionaries.import_select_files"), width=220, command=do_select_import_files)
+        self._import_btn_select.grid(row=2, column=0, sticky="w", padx=6, pady=(0, 4))
+        self._import_btn_import = ctk.CTkButton(_import_frame, text=t("dictionaries.import_do"), width=220, command=do_import_dictionaries)
+        self._import_btn_import.grid(row=3, column=0, sticky="w", padx=6, pady=(0, 4))
+        self._import_files_label = ctk.CTkLabel(_import_frame, text="", font=ctk.CTkFont(size=12), text_color=("gray50", "gray60"), anchor="w")
+        self._import_files_label.grid(row=4, column=0, sticky="w", padx=6, pady=(0, 2))
+
+        def do_select_import_files():
+            paths = filedialog.askopenfilenames(
+                title=t("dictionaries.import_select_title"),
+                filetypes=[("JSON", "*.json"), ("All files", "*.*")]
+            )
+            if paths:
+                self._import_pending_paths = list(paths)
+                if len(paths) == 1:
+                    self._import_files_label.configure(text=os.path.basename(paths[0]))
+                else:
+                    self._import_files_label.configure(text=t("dictionaries.import_files_count", count=len(paths)))
+
+        def do_import_dictionaries():
+            paths = getattr(self, "_import_pending_paths", None) or []
+            if not paths:
+                messagebox.showinfo("", t("dictionaries.import_no_files"))
+                return
+            base_dir = DictionaryService.get_dictionaries_dir()
+            existing_ids = {info["id"] for info in DictionaryService.list_dictionaries()}
+            imported = 0
+            errors = []
+            for path in paths:
+                if not os.path.isfile(path):
+                    continue
+                data = DictionaryService.load(path)
+                if not data:
+                    errors.append(os.path.basename(path))
+                    continue
+                # Имя файла при импорте берём из параметра name в JSON; если name пустой — из имени исходного файла
+                if (data.name or "").strip():
+                    base_name = _sanitize_dict_filename(data.name.strip())
+                else:
+                    base_name = _sanitize_dict_filename(os.path.splitext(os.path.basename(path))[0])
+                if not base_name:
+                    base_name = "imported"
+                fname = base_name + ".json"
+                idx = 2
+                while fname in existing_ids:
+                    fname = f"{base_name}_{idx}.json"
+                    idx += 1
+                existing_ids.add(fname)
+                dest = os.path.join(base_dir, fname)
+                if DictionaryService.save(dest, data):
+                    imported += 1
+                else:
+                    errors.append(os.path.basename(path))
+            self._import_pending_paths = []
+            self._import_files_label.configure(text="")
+            refresh_global_list()
+            if imported:
+                messagebox.showinfo("", t("dictionaries.import_done", count=imported))
+            if errors:
+                messagebox.showerror("", t("dictionaries.import_errors", count=len(errors), files=", ".join(errors[:5]) + ("..." if len(errors) > 5 else "")))
+
+        self._import_pending_paths = []
+
+        def _show_edit_preset_section(pname: str):
+            """Показать третий раздел и загрузить пресет для редактирования."""
+            self._preset_edit_name = pname
+            tab_presets.grid_rowconfigure(2, weight=1)
+            _preset_tab_edit.grid()
+            refresh_preset_edit_section()
+
+        def refresh_preset_edit_section():
+            """Заполнить список словарей в разделе «Редактировать пресет»: сначала отмеченные, потом неотмеченные."""
+            for w in list(self._preset_tab_edit_dict_list.winfo_children()):
+                try:
+                    w.destroy()
+                except Exception:
+                    pass
+            self._preset_edit_vars = {}
+            if not self._preset_edit_name:
+                return
+            presets = load_config().get("dictionary_presets") or []
+            preset_ids = set()
+            for p in presets:
+                if (p.get("name") or "") == self._preset_edit_name:
+                    preset_ids = set(p.get("enabled_ids") or [])
+                    break
+            all_dicts = DictionaryService.list_dictionaries()
+            # Сначала отмеченные (в пресете), потом неотмеченные
+            checked_first = [(info, info["id"] in preset_ids) for info in all_dicts]
+            for row_i, (info, in_preset) in enumerate(checked_first):
+                did = info["id"]
+                name = info.get("name") or did
+                var = ctk.BooleanVar(value=in_preset)
+                self._preset_edit_vars[did] = var
+                cb = ctk.CTkCheckBox(self._preset_tab_edit_dict_list, text=name, variable=var)
+                cb.grid(row=row_i, column=0, sticky="w", padx=6, pady=2)
+
+        def do_save_preset_edit():
+            """Сохранить изменения пресета и скрыть третий раздел."""
+            if not self._preset_edit_name:
+                return
+            enabled_ids = [did for did, v in getattr(self, "_preset_edit_vars", {}).items() if v.get()]
+            presets = list(load_config().get("dictionary_presets") or [])
+            for i, p in enumerate(presets):
+                if (p.get("name") or "") == self._preset_edit_name:
+                    presets[i] = {**p, "enabled_ids": enabled_ids}
+                    break
+            save_config({"dictionary_presets": presets})
+            self._preset_edit_name = None
+            tab_presets.grid_rowconfigure(2, weight=0)
+            _preset_tab_edit.grid_remove()
+            refresh_presets_tab()
+            messagebox.showinfo("", t("dictionaries.preset_saved"))
+
+        self._preset_btn_save_edit.configure(command=do_save_preset_edit)
 
         def _show_dict_context_menu(event, did: str):
             menu = Menu(self, tearoff=0)
             menu.add_command(label=t("dictionaries.rename"), command=lambda: _start_dict_rename(did))
             menu.add_command(label=t("dictionaries.delete"), command=lambda: _delete_dict(did))
+            menu.add_command(label=t("dictionaries.open_in_folder"), command=do_open_folder)
             try:
                 menu.tk_popup(event.x_root, event.y_root)
             finally:
                 menu.grab_release()
+
+        def _show_section2_and_edit(did: str):
+            """Открыть второй раздел и показать словарь для редактирования."""
+            self._selected_dictionary_id = did
+            tab_dictionaries.grid_rowconfigure(1, weight=1)
+            _dict_section2.grid()
+            refresh_editor()
 
         def _start_dict_rename(did: str):
             self._dict_rename_pending_id = did
@@ -2095,14 +2351,25 @@ class App(ctk.CTk):
                 self._dict_rename_pending_id = None
             refresh_global_list()
             refresh_editor()
-            refresh_enabled_list()
+            if not self._selected_dictionary_id:
+                tab_dictionaries.grid_rowconfigure(1, weight=0)
+                _dict_section2.grid_remove()
 
         def refresh_global_list():
-            for w in list(dict_list_frame.winfo_children()):
+            try:
+                if not dict_list_frame.winfo_exists():
+                    return
+                children = dict_list_frame.winfo_children()
+            except Exception:
+                return
+            for w in list(children):
                 try:
                     w.destroy()
                 except Exception:
                     pass
+            has_project = bool(self.current_session_path)
+            if not has_project:
+                ctk.CTkLabel(dict_list_frame, text=t("dictionaries.open_project_to_enable"), text_color="gray").grid(row=0, column=0, sticky="w", pady=4)
             lst = DictionaryService.list_dictionaries()
             rename_pending = getattr(self, "_dict_rename_pending_id", None)
             for row_index, info in enumerate(lst):
@@ -2110,27 +2377,67 @@ class App(ctk.CTk):
                 name = info.get("name") or did
                 dtype = info.get("type") or TYPE_CORRECTION
                 row_f = ctk.CTkFrame(dict_list_frame, fg_color=("gray85", "gray28") if self._selected_dictionary_id == did else "transparent", corner_radius=4, cursor="hand2")
-                row_f.grid_columnconfigure(0, weight=1)
-                row_f.grid(row=row_index, column=0, sticky="ew", pady=2)
+                row_f.grid_columnconfigure(1, weight=1)
+                row_f.grid(row=row_index + (0 if has_project else 1), column=0, sticky="ew", pady=2)
+                col_offset = 0
+                if has_project:
+                    var = ctk.BooleanVar(value=did in (self.enabled_dictionary_ids or []))
+                    def _on_toggle(did_=did, v=var):
+                        ids = list(self.enabled_dictionary_ids or [])
+                        if v.get():
+                            if did_ not in ids:
+                                ids.append(did_)
+                        else:
+                            ids = [x for x in ids if x != did_]
+                        self.enabled_dictionary_ids = ids
+                    cb = ctk.CTkCheckBox(row_f, text="", width=22, variable=var, command=lambda did_=did, v=var: _on_toggle(did_, v))
+                    cb.grid(row=0, column=0, sticky="w", padx=(6, 4), pady=4)
+                    col_offset = 1
                 if did == rename_pending:
                     entry = ctk.CTkEntry(row_f, font=ctk.CTkFont(size=12))
                     entry.insert(0, name)
-                    entry.grid(row=0, column=0, sticky="ew", padx=8, pady=4)
+                    entry.grid(row=0, column=col_offset, sticky="ew", padx=8, pady=4)
                     entry.focus_set()
                     entry.select_range(0, "end")
 
                     def _apply_rename(did_=did, ent=entry):
                         new_name = ent.get().strip()
                         self._dict_rename_pending_id = None
-                        if new_name:
-                            data = DictionaryService.load_by_id(did_)
-                            if data:
-                                data.name = new_name
-                                path = os.path.join(DictionaryService.get_dictionaries_dir(), did_)
-                                DictionaryService.save(path, data)
+                        if not new_name:
+                            refresh_global_list()
+                            return
+                        data = DictionaryService.load_by_id(did_)
+                        if not data:
+                            refresh_global_list()
+                            return
+                        data.name = new_name
+                        base_dir = DictionaryService.get_dictionaries_dir()
+                        old_path = os.path.join(base_dir, did_)
+                        new_base = _sanitize_dict_filename(new_name)
+                        existing_ids = {info["id"] for info in DictionaryService.list_dictionaries()}
+                        new_fname = new_base + ".json"
+                        idx = 2
+                        while new_fname in existing_ids and new_fname != did_:
+                            new_fname = f"{new_base}_{idx}.json"
+                            idx += 1
+                        new_path = os.path.join(base_dir, new_fname)
+                        if new_fname == did_:
+                            DictionaryService.save(old_path, data)
+                        else:
+                            if not DictionaryService.save(new_path, data):
+                                messagebox.showerror("", "Failed to rename dictionary file.")
+                                refresh_global_list()
+                                return
+                            try:
+                                os.remove(old_path)
+                            except Exception:
+                                pass
+                            if self.enabled_dictionary_ids and did_ in self.enabled_dictionary_ids:
+                                self.enabled_dictionary_ids = [new_fname if x == did_ else x for x in self.enabled_dictionary_ids]
+                            if self._selected_dictionary_id == did_:
+                                self._selected_dictionary_id = new_fname
                         refresh_global_list()
                         refresh_editor()
-                        refresh_enabled_list()
 
                     def _cancel_rename():
                         self._dict_rename_pending_id = None
@@ -2141,61 +2448,137 @@ class App(ctk.CTk):
                     entry.bind("<Button-3>", lambda e, did_=did: _show_dict_context_menu(e, did_))
                 else:
                     lbl = ctk.CTkLabel(row_f, text=f"{name} ({dtype})", anchor="w")
-                    lbl.grid(row=0, column=0, sticky="ew", padx=8, pady=4)
+                    lbl.grid(row=0, column=col_offset, sticky="ew", padx=8, pady=4)
 
                     def on_click(did_=did):
-                        self._selected_dictionary_id = did_
+                        _show_section2_and_edit(did_)
                         refresh_global_list()
-                        refresh_editor()
                     row_f.bind("<Button-1>", lambda e, did_=did: on_click(did_))
                     lbl.bind("<Button-1>", lambda e, did_=did: on_click(did_))
                 row_f.bind("<Button-3>", lambda e, did_=did: _show_dict_context_menu(e, did_))
                 if did != rename_pending:
                     lbl.bind("<Button-3>", lambda e, did_=did: _show_dict_context_menu(e, did_))
             if not lst:
-                ctk.CTkLabel(dict_list_frame, text=t("dictionaries.no_dictionaries"), text_color="gray").grid(row=0, column=0, sticky="w", pady=4)
+                no_dict_row = 0 if has_project else 1
+                ctk.CTkLabel(dict_list_frame, text=t("dictionaries.no_dictionaries"), text_color="gray").grid(row=no_dict_row, column=0, sticky="w", pady=4)
 
         def refresh_editor():
-            for w in list(self._dict_editor_inner.winfo_children()):
+            try:
+                if not self._dict_editor_inner.winfo_exists():
+                    return
+                inner_children = self._dict_editor_inner.winfo_children()
+                form_children = self._dict_editor_form.winfo_children()
+            except Exception:
+                return
+            for w in list(inner_children):
+                try:
+                    w.destroy()
+                except Exception:
+                    pass
+            for w in list(form_children):
                 try:
                     w.destroy()
                 except Exception:
                     pass
             if not self._selected_dictionary_id:
+                tab_dictionaries.grid_rowconfigure(1, weight=0)
+                _dict_section2.grid_remove()
+                self._dict_apply_post_frame.grid_remove()
                 return
             data = DictionaryService.load_by_id(self._selected_dictionary_id)
             if not data:
                 return
-            path = os.path.join(DictionaryService.get_dictionaries_dir(), self._selected_dictionary_id)
-            ctk.CTkLabel(self._dict_editor_inner, text=f"{data.name} — {data.type}", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 4))
-            entries_scroll = ctk.CTkScrollableFrame(self._dict_editor_inner, fg_color="transparent", height=100)
-            entries_scroll.grid(row=1, column=0, columnspan=2, sticky="ew", pady=4)
-            entries_scroll.grid_columnconfigure(0, weight=1)
+            if data.type == TYPE_CORRECTION:
+                self._dict_apply_post_frame.grid(row=2, column=0, sticky="w", padx=6, pady=(8, 10))
+            else:
+                self._dict_apply_post_frame.grid_remove()
+            self._dict_section2_title.configure(text=t("dictionaries.section_editor_title"))
+            _type_label = t("dictionaries.type_correction") if data.type == TYPE_CORRECTION else t("dictionaries.type_terms")
+            self._dict_section2_desc.configure(text=t("dictionaries.section_editor_desc", name=data.name or "", type=_type_label))
+            editing_idx = getattr(self, "_dict_editing_entry_index", None)
             for i, e in enumerate(data.entries):
-                row_f = ctk.CTkFrame(entries_scroll, fg_color="transparent")
+                row_f = ctk.CTkFrame(self._dict_editor_inner, fg_color=("gray85", "gray28") if i == editing_idx else "transparent", corner_radius=4, cursor="hand2")
                 row_f.grid(row=i, column=0, sticky="ew", pady=2)
                 row_f.grid_columnconfigure(0, weight=1)
                 if data.type == TYPE_TERMS:
                     txt = (e.term or e.original or e.corrected or "").strip()
-                    ctk.CTkLabel(row_f, text=txt, anchor="w").grid(row=0, column=0, sticky="ew", padx=(0, 8))
-                    ctk.CTkButton(row_f, text=t("glossary.delete"), width=60, command=lambda idx=i: _delete_entry_at(idx)).grid(row=0, column=1)
+                    lbl = ctk.CTkLabel(row_f, text=txt, anchor="w")
+                    lbl.grid(row=0, column=0, sticky="ew", padx=8, pady=4)
                 else:
-                    ctk.CTkLabel(row_f, text=f"{e.original} → {e.corrected}", anchor="w").grid(row=0, column=0, sticky="ew", padx=(0, 8))
-                    ctk.CTkButton(row_f, text=t("glossary.delete"), width=60, command=lambda idx=i: _delete_entry_at(idx)).grid(row=0, column=1)
-            add_row = ctk.CTkFrame(self._dict_editor_inner, fg_color="transparent")
-            add_row.grid(row=2, column=0, columnspan=2, sticky="ew", pady=4)
-            add_row.grid_columnconfigure(1, weight=1)
+                    lbl = ctk.CTkLabel(row_f, text=f"{e.original} → {e.corrected}", anchor="w")
+                    lbl.grid(row=0, column=0, sticky="ew", padx=8, pady=4)
+                ctk.CTkButton(row_f, text=t("glossary.delete"), width=60, command=lambda idx=i: _delete_entry_at(idx)).grid(row=0, column=1, padx=4, pady=2)
+
+                def _on_entry_click(idx_=i):
+                    self._dict_editing_entry_index = idx_
+                    refresh_editor()
+                row_f.bind("<Button-1>", lambda e, idx_=i: _on_entry_click(idx_))
+                lbl.bind("<Button-1>", lambda e, idx_=i: _on_entry_click(idx_))
+            # Форма внизу: одна колонка. Термины — одно поле + Сохранить; Исправления — два поля + Сохранить
+            r = 0
             if data.type == TYPE_TERMS:
-                self._dict_term_entry = ctk.CTkEntry(add_row, width=200)
-                self._dict_term_entry.grid(row=0, column=0, padx=(0, 5))
-                ctk.CTkButton(add_row, text=t("glossary.add"), command=_add_term_entry).grid(row=0, column=1, padx=2)
+                ctk.CTkLabel(self._dict_editor_form, text=t("glossary.term")).grid(row=r, column=0, sticky="w", padx=6, pady=(0, 2))
+                r += 1
+                self._dict_term_entry = ctk.CTkEntry(self._dict_editor_form, width=220)
+                self._dict_term_entry.grid(row=r, column=0, sticky="w", padx=6, pady=(0, 4))
+                self._dict_term_entry.bind("<Return>", lambda e: _save_entry_from_form())
+                if editing_idx is not None and editing_idx < len(data.entries):
+                    self._dict_term_entry.insert(0, (data.entries[editing_idx].term or data.entries[editing_idx].original or "").strip())
+                r += 1
             else:
-                self._dict_orig_entry = ctk.CTkEntry(add_row, width=150)
-                self._dict_corr_entry = ctk.CTkEntry(add_row, width=150)
-                self._dict_orig_entry.grid(row=0, column=0, padx=(0, 5))
-                self._dict_corr_entry.grid(row=0, column=1, padx=(0, 5))
-                ctk.CTkButton(add_row, text=t("glossary.add"), command=_add_correction_entry).grid(row=0, column=2, padx=2)
-            ctk.CTkButton(self._dict_editor_inner, text=t("glossary.save"), command=_save_current_dictionary).grid(row=3, column=0, pady=(4, 0), sticky="w")
+                ctk.CTkLabel(self._dict_editor_form, text=t("glossary.original")).grid(row=r, column=0, sticky="w", padx=6, pady=(0, 2))
+                r += 1
+                self._dict_orig_entry = ctk.CTkEntry(self._dict_editor_form, width=220)
+                self._dict_orig_entry.grid(row=r, column=0, sticky="w", padx=6, pady=(0, 4))
+                self._dict_orig_entry.bind("<Return>", lambda e: _save_entry_from_form())
+                r += 1
+                ctk.CTkLabel(self._dict_editor_form, text=t("glossary.corrected")).grid(row=r, column=0, sticky="w", padx=6, pady=(4, 2))
+                r += 1
+                self._dict_corr_entry = ctk.CTkEntry(self._dict_editor_form, width=220)
+                self._dict_corr_entry.grid(row=r, column=0, sticky="w", padx=6, pady=(0, 4))
+                self._dict_corr_entry.bind("<Return>", lambda e: _save_entry_from_form())
+                if editing_idx is not None and editing_idx < len(data.entries):
+                    self._dict_orig_entry.insert(0, (data.entries[editing_idx].original or "").strip())
+                    self._dict_corr_entry.insert(0, (data.entries[editing_idx].corrected or "").strip())
+                r += 1
+            ctk.CTkButton(self._dict_editor_form, text=t("glossary.save"), border_spacing=0, command=_save_entry_from_form).grid(row=r, column=0, sticky="w", padx=6, pady=(8, 0))
+
+        def _save_entry_from_form():
+            if not self._selected_dictionary_id:
+                return
+            data = DictionaryService.load_by_id(self._selected_dictionary_id)
+            if not data:
+                return
+            from DictionaryService import DictionaryEntry
+            editing_idx = getattr(self, "_dict_editing_entry_index", None)
+            if data.type == TYPE_TERMS:
+                term = getattr(self, "_dict_term_entry", None)
+                if term is None:
+                    return
+                val = term.get().strip()
+                if not val:
+                    return
+                if editing_idx is not None and editing_idx < len(data.entries):
+                    data.entries[editing_idx] = DictionaryEntry(term=val, original=val, corrected=val)
+                else:
+                    data.entries.append(DictionaryEntry(term=val, original=val, corrected=val))
+            else:
+                orig = getattr(self, "_dict_orig_entry", None)
+                corr = getattr(self, "_dict_corr_entry", None)
+                if orig is None or corr is None:
+                    return
+                orig_val = orig.get().strip()
+                if not orig_val:
+                    return
+                corr_val = corr.get().strip() or orig_val
+                if editing_idx is not None and editing_idx < len(data.entries):
+                    data.entries[editing_idx] = DictionaryEntry(original=orig_val, corrected=corr_val)
+                else:
+                    data.entries.append(DictionaryEntry(original=orig_val, corrected=corr_val))
+            path = os.path.join(DictionaryService.get_dictionaries_dir(), self._selected_dictionary_id)
+            DictionaryService.save(path, data)
+            self._dict_editing_entry_index = None
+            refresh_editor()
 
         def _delete_entry_at(index: int):
             if not self._selected_dictionary_id:
@@ -2206,6 +2589,10 @@ class App(ctk.CTk):
             data.entries.pop(index)
             path = os.path.join(DictionaryService.get_dictionaries_dir(), self._selected_dictionary_id)
             DictionaryService.save(path, data)
+            refresh_editor()
+
+        def _start_edit_entry_at(idx: int):
+            self._dict_editing_entry_index = idx
             refresh_editor()
 
         def _add_term_entry():
@@ -2253,70 +2640,96 @@ class App(ctk.CTk):
                 messagebox.showinfo("", t("dictionaries.saved"))
             refresh_global_list()
 
-        def refresh_enabled_list():
-            for w in list(self._dict_enabled_list_frame.winfo_children()):
-                if w is self._dict_no_project_label:
-                    continue
+        def refresh_presets_tab():
+            # Верх: список словарей с галочками (включить в проект)
+            for w in list(self._preset_tab_dict_list.winfo_children()):
                 try:
                     w.destroy()
                 except Exception:
                     pass
-            self._dict_enabled_checkboxes.clear()
-            try:
-                if not self.current_session_path:
-                    self._dict_no_project_label.grid(row=0, column=0, sticky="w", padx=0, pady=4)
-                    return
-                self._dict_no_project_label.grid_forget()
-            except Exception:
-                pass
-            lst = DictionaryService.list_dictionaries()
-            for info in lst:
-                did = info["id"]
-                name = info.get("name") or did
-                var = ctk.BooleanVar(value=did in (self.enabled_dictionary_ids or []))
-                cb = ctk.CTkCheckBox(self._dict_enabled_list_frame, text=name, variable=var, command=lambda did_=did, v=var: _on_enabled_toggle(did_, v))
-                cb.grid(row=len(self._dict_enabled_list_frame.winfo_children()), column=0, sticky="w", pady=2)
-                self._dict_enabled_checkboxes[did] = var
-
-        def _on_enabled_toggle(dict_id: str, var: ctk.BooleanVar):
-            ids = list(self.enabled_dictionary_ids or [])
-            if var.get():
-                if dict_id not in ids:
-                    ids.append(dict_id)
+            has_project = bool(self.current_session_path)
+            if not has_project:
+                ctk.CTkLabel(self._preset_tab_dict_list, text=t("dictionaries.open_project_to_enable"), text_color="gray").grid(row=0, column=0, sticky="w", pady=8, padx=6)
             else:
-                ids = [x for x in ids if x != dict_id]
-            self.enabled_dictionary_ids = ids
-
-        def refresh_presets():
+                lst = DictionaryService.list_dictionaries()
+                for row_i, info in enumerate(lst):
+                    did = info["id"]
+                    name = info.get("name") or did
+                    var = ctk.BooleanVar(value=did in (self.enabled_dictionary_ids or []))
+                    def _on_toggle(did_=did, v=var):
+                        ids = list(self.enabled_dictionary_ids or [])
+                        if v.get():
+                            if did_ not in ids:
+                                ids.append(did_)
+                        else:
+                            ids = [x for x in ids if x != did_]
+                        self.enabled_dictionary_ids = ids
+                        refresh_global_list()
+                    cb = ctk.CTkCheckBox(self._preset_tab_dict_list, text=f"{name}", variable=var, command=lambda did_=did, v=var: _on_toggle(did_, v))
+                    cb.grid(row=row_i, column=0, sticky="w", padx=6, pady=2)
+            # Низ: список пресетов — галочка (применить к проекту) и клик по названию (редактировать пресет)
+            for w in list(self._preset_tab_preset_list.winfo_children()):
+                try:
+                    w.destroy()
+                except Exception:
+                    pass
             presets = load_config().get("dictionary_presets") or []
-            names = [p.get("name") or "" for p in presets if p.get("name")]
-            self._dict_preset_var.set(names[0] if names else "")
-            self._dict_preset_option.configure(values=names if names else [""])
+            current_ids = set(self.enabled_dictionary_ids or [])
+            for row_i, p in enumerate(presets):
+                pname = p.get("name") or ""
+                if not pname:
+                    continue
+                p_ids = set(p.get("enabled_ids") or [])
+                checked = p_ids == current_ids
+                var = ctk.BooleanVar(value=checked)
+                def _on_preset_toggle(pname_=pname, v=var):
+                    if not v.get():
+                        return
+                    presets_list = load_config().get("dictionary_presets") or []
+                    for pr in presets_list:
+                        if (pr.get("name") or "") == pname_:
+                            self.enabled_dictionary_ids = list(pr.get("enabled_ids") or [])
+                            break
+                    refresh_global_list()
+                    refresh_presets_tab()
+                row_f = ctk.CTkFrame(self._preset_tab_preset_list, fg_color="transparent")
+                row_f.grid(row=row_i, column=0, sticky="ew", pady=2)
+                row_f.grid_columnconfigure(1, weight=1)
+                cb = ctk.CTkCheckBox(row_f, text="", width=22, variable=var, command=lambda pname_=pname, v=var: _on_preset_toggle(pname_, v))
+                cb.grid(row=0, column=0, sticky="w", padx=(6, 4), pady=2)
+                lbl = ctk.CTkLabel(row_f, text=pname, anchor="w", cursor="hand2")
+                lbl.grid(row=0, column=1, sticky="w", padx=4, pady=2)
+                lbl.bind("<Button-1>", lambda e, pname_=pname: _show_edit_preset_section(pname_))
+            if self._preset_edit_name:
+                refresh_preset_edit_section()
 
         def do_add_dictionary():
-            """Добавить словарь без диалога: создаётся с именем по умолчанию, в списке сразу показывается поле для ввода названия."""
+            """Добавить словарь: имя из поля ввода задаёт и отображаемое имя, и имя файла."""
+            name = getattr(self, "_dict_new_name_entry", None)
+            name = name.get().strip() if name else ""
+            if not name:
+                name = t("dictionaries.new_dictionary")
             base = DictionaryService.get_dictionaries_dir()
             existing_ids = {info["id"] for info in DictionaryService.list_dictionaries()}
-            fname = "new.json"
-            for i in range(2, 1000):
-                if fname not in existing_ids:
-                    break
-                fname = f"new_{i}.json"
-            if fname in existing_ids:
-                messagebox.showerror("", "Could not create dictionary: too many files.")
-                return
+            base_name = _sanitize_dict_filename(name)
+            fname = base_name + ".json"
+            idx = 2
+            while fname in existing_ids:
+                fname = f"{base_name}_{idx}.json"
+                idx += 1
+                if idx > 5000:
+                    messagebox.showerror("", "Could not create dictionary: too many files.")
+                    return
             from DictionaryService import DictionaryData
-            default_name = t("dictionaries.new_dictionary")
-            data = DictionaryData(type=TYPE_CORRECTION, name=default_name, entries=[])
+            dtype = TYPE_TERMS if self._dict_new_type_var.get() == "terms" else TYPE_CORRECTION
+            data = DictionaryData(type=dtype, name=name, entries=[])
             path = os.path.join(base, fname)
             if not DictionaryService.save(path, data):
                 messagebox.showerror("", "Failed to create dictionary.")
                 return
-            self._selected_dictionary_id = fname
-            self._dict_rename_pending_id = fname
+            if getattr(self, "_dict_new_name_entry", None):
+                self._dict_new_name_entry.delete(0, "end")
             refresh_global_list()
-            refresh_editor()
-            refresh_enabled_list()
 
         def do_open_folder():
             import subprocess
@@ -2332,17 +2745,6 @@ class App(ctk.CTk):
                 except Exception:
                     messagebox.showerror("", "Could not open folder.")
 
-        def do_apply_preset():
-            name = self._dict_preset_var.get()
-            if not name:
-                return
-            presets = load_config().get("dictionary_presets") or []
-            for p in presets:
-                if (p.get("name") or "") == name:
-                    self.enabled_dictionary_ids = list(p.get("enabled_ids") or [])
-                    refresh_enabled_list()
-                    return
-
         def do_save_as_preset():
             name = simpledialog.askstring(t("dictionaries.presets"), t("dictionaries.preset_name_prompt"), parent=self)
             if not name or not name.strip():
@@ -2351,26 +2753,28 @@ class App(ctk.CTk):
             presets = list(load_config().get("dictionary_presets") or [])
             presets.append({"name": name, "enabled_ids": list(self.enabled_dictionary_ids or [])})
             save_config({"dictionary_presets": presets})
-            refresh_presets()
+            refresh_presets_tab()
             messagebox.showinfo("", t("dictionaries.preset_saved"))
 
         self._dict_btn_add.configure(command=do_add_dictionary)
-        self._dict_btn_open_folder.configure(command=do_open_folder)
-        self._dict_btn_refresh.configure(command=lambda: (refresh_global_list(), refresh_enabled_list(), refresh_presets()))
-        self._dict_btn_apply_preset.configure(command=do_apply_preset)
+        self._dict_new_name_entry.bind("<Return>", lambda e: do_add_dictionary())
         self._dict_btn_save_preset.configure(command=do_save_as_preset)
 
         def _refresh_dictionaries_ui():
             refresh_global_list()
             refresh_editor()
-            refresh_enabled_list()
-            refresh_presets()
+            refresh_presets_tab()
             self._dict_apply_post_var.set(load_config().get("apply_corrections_post", False))
+            if hasattr(self, "_dict_new_type_radio_correction"):
+                self._dict_new_type_radio_correction.configure(text=t("dictionaries.type_correction"))
+            if hasattr(self, "_dict_new_type_radio_terms"):
+                self._dict_new_type_radio_terms.configure(text=t("dictionaries.type_terms"))
+            if getattr(self, "_dict_new_type_var", None) and self._dict_new_type_var.get() not in ("correction", "terms"):
+                self._dict_new_type_var.set("correction")
 
         self._refresh_dictionaries_ui = _refresh_dictionaries_ui
         refresh_global_list()
-        refresh_enabled_list()
-        refresh_presets()
+        refresh_presets_tab()
 
     def _update_status_bar(self):
         """Обновляет строку состояния: время последнего сохранения проекта (дд.мм.гггг чч:мм:сс)."""
@@ -2635,6 +3039,10 @@ class App(ctk.CTk):
                 self.current_file = path
                 self.lbl_file.configure(text=os.path.basename(path))
                 self.full_results = list(getattr(self, "_mic_streaming_results", []))
+                if load_config().get("apply_corrections_post") and self.full_results:
+                    correction_entries = self._get_correction_entries_for_post()
+                    if correction_entries:
+                        DictionaryService.apply_corrections_to_segments(self.full_results, correction_entries)
                 if self.current_project_dir:
                     rel = SessionService._make_path_relative_to_project(
                         path, os.path.join(self.current_project_dir, "_.wiproject")
@@ -2928,6 +3336,10 @@ class App(ctk.CTk):
         self.current_file = path
         self.lbl_file.configure(text=os.path.basename(path))
         self.full_results = list(getattr(self, "_mic_streaming_results", []))
+        if load_config().get("apply_corrections_post") and self.full_results:
+            correction_entries = self._get_correction_entries_for_post()
+            if correction_entries:
+                DictionaryService.apply_corrections_to_segments(self.full_results, correction_entries)
         if self.current_project_dir and path:
             rel = SessionService._make_path_relative_to_project(
                 path, os.path.join(self.current_project_dir, "_.wiproject")
