@@ -2,6 +2,7 @@
 """
 Record audio from the default microphone to a WAV file.
 Uses sounddevice for capture and soundfile for writing.
+Supports device selection and software gain.
 """
 
 import os
@@ -9,7 +10,7 @@ import tempfile
 import threading
 import time
 from datetime import datetime
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 try:
     import numpy as np
@@ -31,20 +32,45 @@ class MicRecordService:
         self._thread: Optional[threading.Thread] = None
         self._chunks: list = []
         self._chunks_lock = threading.Lock()
-        self._stream: Optional[sd.InputStream] = None
+        self._stream: Optional["sd.InputStream"] = None
+        self._gain = 1.0  # software gain (multiplier for samples)
 
     @staticmethod
     def is_available() -> bool:
         """Return True if sounddevice and soundfile are installed and usable."""
         return MIC_AVAILABLE
 
+    @staticmethod
+    def get_input_devices() -> List[Tuple[int, str]]:
+        """Return list of (device_index, device_name) for input devices, without duplicate names (Windows reports same device multiple times)."""
+        if not MIC_AVAILABLE:
+            return []
+        try:
+            devices = sd.query_devices()
+            out = []
+            seen_names = set()
+            for i, dev in enumerate(devices):
+                if dev.get("max_input_channels", 0) > 0:
+                    name = (dev.get("name") or "Device %s" % i).strip()
+                    if name and name not in seen_names:
+                        seen_names.add(name)
+                        out.append((i, name))
+            return out
+        except Exception:
+            return []
+
+    def set_gain(self, gain: float) -> None:
+        """Set software gain (e.g. 0.5 = half, 2.0 = double). Applied when recording."""
+        self._gain = max(0.1, min(5.0, float(gain)))
+
     def is_recording(self) -> bool:
         """Return True if recording is in progress."""
         return self._recording
 
-    def start_recording(self) -> Optional[str]:
+    def start_recording(self, device: Optional[int] = None) -> Optional[str]:
         """
         Start recording in a background thread.
+        device: sounddevice input device index, or None for default.
         Returns None on success, or an error message on failure.
         """
         if not MIC_AVAILABLE:
@@ -54,20 +80,26 @@ class MicRecordService:
         self._stop_event.clear()
         self._chunks = []
         self._recording = True
+        gain = self._gain
 
         def record_loop():
             try:
                 block_ms = 200
                 block_size = int(self.sample_rate * block_ms / 1000) * self.channels
-                with sd.InputStream(
+                kwargs = dict(
                     samplerate=self.sample_rate,
                     channels=self.channels,
                     dtype="float32",
                     blocksize=block_size,
-                ) as stream:
+                )
+                if device is not None:
+                    kwargs["device"] = device
+                with sd.InputStream(**kwargs) as stream:
                     while self._recording and not self._stop_event.is_set():
                         chunk, _ = stream.read(block_size)
                         if chunk is not None and len(chunk) > 0:
+                            if gain != 1.0:
+                                chunk = (chunk * gain).astype("float32")
                             with self._chunks_lock:
                                 self._chunks.append(chunk.copy())
                         time.sleep(0.01)
