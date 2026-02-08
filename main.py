@@ -479,7 +479,7 @@ class App(ctk.CTk):
         self.geometry(f"{800 + self._left_panel_width + self._right_panel_width}x600")
         self.after(100, self._force_update_scroll_regions)
         self.after(50, self._maximize_window)
-        self.bind("<Configure>", lambda e: self._update_mic_panel_width())
+        self.bind("<Configure>", lambda e: self._update_mic_panel_width(e))
         # Строка вкладок — сразу вверху, без отступа
         self._settings_tab_index = 0  # 0=Transcription, 1=Glossary, 2=Interface
         self._settings_tab_var = StringVar(value=t("tabs.transcription"))
@@ -638,7 +638,9 @@ class App(ctk.CTk):
         folder = os.path.dirname(abs_path)
         if sys.platform == "win32":
             try:
-                subprocess.Popen(["explorer", "/select," + abs_path])
+                # Путь в кавычках, чтобы Проводник открыл папку с файлом и выделил файл (не Документы)
+                path_arg = abs_path.replace('"', '""')
+                subprocess.Popen(f'explorer /select,"{path_arg}"', shell=True)
             except Exception:
                 try:
                     os.startfile(folder)
@@ -2066,18 +2068,25 @@ class App(ctk.CTk):
         self._recording_panel_container.grid(row=4, column=1, padx=20, pady=(0, 8), sticky="w")
         self._update_mic_panel_width()
 
-    def _update_mic_panel_width(self):
+    def _update_mic_panel_width(self, event=None):
         """Адаптивная ширина панели микрофона: на всю ширину, если места меньше номинальной ширины."""
+        if event is not None and getattr(event, "widget", None) is not None and event.widget != self:
+            return
         if not getattr(self, "_mic_panel_visible", False):
             return
         try:
+            cont = getattr(self, "_recording_panel_container", None)
+            if not cont:
+                return
+            if not cont.winfo_exists():
+                return
             available = self.control_frame.winfo_width()
             if available <= 1:
                 available = self.winfo_width() - getattr(self, "_left_panel_width", 220) - getattr(self, "_right_panel_width", 320) - 80
+            sticky = "ew" if available < getattr(self, "_mic_panel_nominal_width", 720) else "w"
+            cont.grid(row=4, column=1, padx=20, pady=(0, 8), sticky=sticky)
         except Exception:
-            available = self._mic_panel_nominal_width + 1
-        sticky = "ew" if available < getattr(self, "_mic_panel_nominal_width", 720) else "w"
-        self._recording_panel_container.grid(row=4, column=1, padx=20, pady=(0, 8), sticky=sticky)
+            pass
 
     def _hide_mic_panel(self):
         """Закрыть панель микрофона; при активной записи — сначала остановить."""
