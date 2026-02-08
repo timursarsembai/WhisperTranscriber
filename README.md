@@ -52,6 +52,29 @@
 - `build.py` — скрипт сборки EXE.
 - `models/` — папка загружаемых моделей Whisper.
 - `locales/` — файлы переводов (en, ru, es, kk).
+- `tests/` — модульные тесты (pytest).
+
+## Тестирование
+
+Установка зависимостей для тестов:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+Запуск всех тестов из корня проекта:
+
+```bash
+python -m pytest tests/ -v
+```
+
+Покрытие кода (опционально):
+
+```bash
+python -m pytest tests/ -v --cov=. --cov-report=term-missing
+```
+
+Тесты охватывают: GlossaryService, SessionService, DictionaryService, ExportService, language_names (без внешних сервисов и UI).
 
 ## Дополнительные зависимости
 

@@ -1,0 +1,16 @@
+# Core (included in EXE build)
+# faster-whisper, customtkinter, etc. — see build.py
+
+# Optional: YouTube import (paste link to download audio)
+yt-dlp>=2024.1.1
+# FFmpeg binaries for yt-dlp post-processing (no manual PATH needed)
+imageio-ffmpeg>=0.5.0
+
+# Optional: Microphone recording
+numpy
+sounddevice>=0.4.6
+soundfile>=0.12.1
+
+# Optional: System microphone volume (Windows)
+pycaw>=20240210
+comtypes; sys_platform == "win32"

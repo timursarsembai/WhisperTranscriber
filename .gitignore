@@ -36,8 +36,14 @@ dictionaries/
 # Splash screen image (generated during build)
 splash.png
 
-# Results
+# Results (but keep dependency files)
 *.txt
+!requirements*.txt
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
 
 # IDE
 .vscode/
