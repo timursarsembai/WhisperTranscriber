@@ -30,8 +30,10 @@ class SessionData:
     model_used: str = ""
     # Для будущего: история правок (снимки или диффы)
     edit_history: List[dict] = field(default_factory=list)
-    # Путь к глоссарию (JSON), опционально
+    # Путь к глоссарию (JSON), опционально (legacy)
     glossary_path: Optional[str] = None
+    # Включённые глобальные словари (ID = имена файлов в папке dictionaries)
+    enabled_dictionary_ids: Optional[List[str]] = None
     # Версия схемы
     version: int = SCHEMA_VERSION
     # v2: транскрипты по всем файлам (ключ — относительный путь от папки проекта)
@@ -52,13 +54,15 @@ class SessionData:
             d.pop("file_transcripts", None)
         if d.get("current_file_rel") is None:
             d.pop("current_file_rel", None)
+        if d.get("enabled_dictionary_ids") is None:
+            d.pop("enabled_dictionary_ids", None)
         return d
 
     @classmethod
     def from_dict(cls, data: dict) -> "SessionData":
         known = {
             "audio_path", "transcript", "created_at", "updated_at",
-            "model_used", "edit_history", "glossary_path", "version",
+            "model_used", "edit_history", "glossary_path", "enabled_dictionary_ids", "version",
             "file_transcripts", "current_file_rel",
         }
         filtered = {k: v for k, v in data.items() if k in known}
@@ -184,6 +188,7 @@ class SessionService:
         transcript: List[dict],
         model_used: str = "",
         glossary_path: Optional[str] = None,
+        enabled_dictionary_ids: Optional[List[str]] = None,
         project_path: Optional[str] = None,
         file_transcripts: Optional[Dict[str, List[dict]]] = None,
         current_file_rel: Optional[str] = None,
@@ -195,6 +200,7 @@ class SessionService:
             transcript=list(transcript),
             model_used=model_used,
             glossary_path=glossary_path,
+            enabled_dictionary_ids=enabled_dictionary_ids or None,
         )
         if project_path is not None and file_transcripts is not None:
             s.file_transcripts = dict(file_transcripts)

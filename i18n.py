@@ -23,6 +23,16 @@ def _config_path():
     return os.path.join(base, "wi_config.json")
 
 
+def get_dictionaries_dir() -> str:
+    """Папка глобальных словарей (общая для всех проектов). Создаётся при первом использовании."""
+    path = os.path.join(os.path.dirname(_config_path()), "dictionaries")
+    try:
+        os.makedirs(path, exist_ok=True)
+    except Exception:
+        pass
+    return path
+
+
 def save_locale_preference(code: str) -> None:
     """Сохранить выбранный язык интерфейса в конфиг."""
     code = (code or "en").strip().lower()
