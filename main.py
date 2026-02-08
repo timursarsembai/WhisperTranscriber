@@ -129,6 +129,9 @@ MODEL_SIZE_TO_REPO = {
     "large-v3": "Systran/faster-whisper-large-v3",
 }
 
+# Эмодзи флагов для выбора языка интерфейса (шрифт Segoe UI Emoji отображает их как флаги на Windows)
+LANG_FLAGS = {"en": "\U0001f1ec\U0001f1e7", "es": "\U0001f1ea\U0001f1f8", "ru": "\U0001f1f7\U0001f1fa", "kk": "\U0001f1f0\U0001f1ff"}
+
 
 def _format_size_bytes(size_bytes: int) -> str:
     """Форматирует размер в байтах в строку вида '450 MB' или '1.2 GB'."""
@@ -1343,12 +1346,12 @@ class App(ctk.CTk):
         if hasattr(self, "_interface_lang_lbl"):
             self._interface_lang_lbl.configure(text=t("interface.language"))
         if hasattr(self, "_interface_selection_label"):
-            self._interface_selection_label.configure(text=t("settings.selection", value=t(f"lang.{get_locale()}")))
+            self._interface_selection_label.configure(text=t("settings.selection", value=(LANG_FLAGS.get(get_locale(), "") + " " + t(f"lang.{get_locale()}")).strip()))
         for code, rf in getattr(self, "_interface_row_frames", {}).items():
             rf.configure(fg_color=("#D6E4FF", "#2A4A6E") if code == get_locale() else "transparent")
             children = rf.winfo_children()
-            if children:
-                children[0].configure(text=t(f"lang.{code}"))
+            if len(children) >= 2:
+                children[1].configure(text=t(f"lang.{code}"))
 
     def _build_interface_settings_panel(self, parent):
         """Вкладка Interface: язык UI в виде списка как Модели (en, es, ru, kk), позже — тема."""
@@ -1363,8 +1366,9 @@ class App(ctk.CTk):
         self._interface_lang_lbl = ctk.CTkLabel(win, text=t("interface.language"), font=ctk.CTkFont(weight="bold"))
         self._interface_lang_lbl.grid(row=row, column=0, sticky="w", padx=10, pady=(10, 2))
         row += 1
+        _cur = get_locale()
         self._interface_selection_label = ctk.CTkLabel(
-            win, text=t("settings.selection", value=t(f"lang.{get_locale()}")),
+            win, text=t("settings.selection", value=(LANG_FLAGS.get(_cur, "") + " " + t(f"lang.{_cur}")).strip()),
             font=ctk.CTkFont(weight="bold"), anchor="w"
         )
         self._interface_selection_label.grid(row=row, column=0, sticky="w", padx=10, pady=(4, 2))
@@ -1376,12 +1380,19 @@ class App(ctk.CTk):
         interface_inner.pack(fill="x", padx=0, pady=0)
         _ui_hover_fg = ("#D6E4FF", "#2A4A6E")
         self._interface_row_frames = {}
+        try:
+            _flag_font = ctk.CTkFont(family="Segoe UI Emoji", size=16)
+        except Exception:
+            _flag_font = ctk.CTkFont(size=16)
+        _name_font = ctk.CTkFont(weight="bold")
         for code in ["en", "es", "ru", "kk"]:
             row_f = ctk.CTkFrame(interface_inner, fg_color="transparent", corner_radius=4, cursor="hand2")
             row_f.pack(fill="x", padx=4, pady=2)
             self._interface_row_frames[code] = row_f
-            lbl = ctk.CTkLabel(row_f, text=t(f"lang.{code}"), font=ctk.CTkFont(weight="bold"), anchor="w", cursor="hand2")
-            lbl.pack(fill="x")
+            flag_lbl = ctk.CTkLabel(row_f, text=LANG_FLAGS.get(code, ""), font=_flag_font, anchor="w", cursor="hand2", width=28)
+            flag_lbl.pack(side="left", padx=(4, 0), pady=4)
+            lbl = ctk.CTkLabel(row_f, text=t(f"lang.{code}"), font=_name_font, anchor="w", cursor="hand2")
+            lbl.pack(side="left", fill="x", expand=True, padx=(6, 8), pady=4)
             def _row_enter(e, rf=row_f):
                 rf.configure(fg_color=_ui_hover_fg)
             def _row_leave(e, rf=row_f, c=code):
@@ -1402,12 +1413,12 @@ class App(ctk.CTk):
                 self.after(20, _check)
             def _click(e, c=code):
                 self._set_ui_locale(c)
-            for w in (row_f, lbl):
+            for w in (row_f, flag_lbl, lbl):
                 w.bind("<Enter>", _row_enter)
                 w.bind("<Leave>", _row_leave)
                 w.bind("<Button-1>", _click)
         current = get_locale()
-        self._interface_selection_label.configure(text=t("settings.selection", value=t(f"lang.{current}")))
+        self._interface_selection_label.configure(text=t("settings.selection", value=(LANG_FLAGS.get(current, "") + " " + t(f"lang.{current}")).strip()))
         for c, rf in self._interface_row_frames.items():
             rf.configure(fg_color=_ui_hover_fg if c == current else "transparent")
         # Место под тему (светлая/тёмная) — позже
