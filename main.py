@@ -2088,13 +2088,13 @@ class App(ctk.CTk):
         self._dict_new_type_radio_correction = ctk.CTkRadioButton(
             _dict_type_radio_frame, text=t("dictionaries.type_correction"),
             variable=self._dict_new_type_var, value="correction",
-            font=ctk.CTkFont(size=14), radiobutton_width=20, radiobutton_height=20
+            font=ctk.CTkFont(size=12), radiobutton_width=20, radiobutton_height=20
         )
         self._dict_new_type_radio_correction.pack(side="left", padx=(0, 16), pady=2)
         self._dict_new_type_radio_terms = ctk.CTkRadioButton(
             _dict_type_radio_frame, text=t("dictionaries.type_terms"),
             variable=self._dict_new_type_var, value="terms",
-            font=ctk.CTkFont(size=14), radiobutton_width=20, radiobutton_height=20
+            font=ctk.CTkFont(size=12), radiobutton_width=20, radiobutton_height=20
         )
         self._dict_new_type_radio_terms.pack(side="left", pady=2)
         ctk.CTkLabel(_dict_add_form, text=t("dictionaries.dictionary_name_prompt")).grid(row=2, column=0, sticky="w", padx=6, pady=(4, 2))
@@ -2136,7 +2136,7 @@ class App(ctk.CTk):
         self._dict_apply_post_cb.grid(row=0, column=0, sticky="nw", padx=(0, 6), pady=2)
         self._dict_apply_post_label = ctk.CTkLabel(
             self._dict_apply_post_frame, text=t("dictionaries.apply_corrections_post"),
-            font=ctk.CTkFont(size=14), anchor="w", justify="left", wraplength=260, cursor="hand2"
+            font=ctk.CTkFont(size=12), anchor="w", justify="left", wraplength=220, cursor="hand2"
         )
         self._dict_apply_post_label.grid(row=0, column=1, sticky="w")
         self._dict_apply_post_label.bind("<Button-1>", lambda e: _apply_post_toggle())
@@ -2191,13 +2191,11 @@ class App(ctk.CTk):
         _import_frame.grid(row=0, column=0, sticky="nsew", padx=6, pady=(0, 4))
         _import_frame.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(_import_frame, text=t("dictionaries.import_title"), font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, sticky="w", padx=6, pady=(4, 2))
-        ctk.CTkLabel(_import_frame, text=t("dictionaries.import_format_desc"), font=ctk.CTkFont(size=12), text_color=("gray40", "gray55"), anchor="w", justify="left", wraplength=280).grid(row=1, column=0, sticky="w", padx=6, pady=(0, 8))
-        self._import_btn_select = ctk.CTkButton(_import_frame, text=t("dictionaries.import_select_files"), width=220, command=do_select_import_files)
-        self._import_btn_select.grid(row=2, column=0, sticky="w", padx=6, pady=(0, 4))
-        self._import_btn_import = ctk.CTkButton(_import_frame, text=t("dictionaries.import_do"), width=220, command=do_import_dictionaries)
-        self._import_btn_import.grid(row=3, column=0, sticky="w", padx=6, pady=(0, 4))
+        ctk.CTkLabel(_import_frame, text=t("dictionaries.import_format_desc"), font=ctk.CTkFont(size=12), text_color=("gray40", "gray55"), anchor="w", justify="left", wraplength=220).grid(row=1, column=0, sticky="w", padx=6, pady=(0, 8))
+
         self._import_files_label = ctk.CTkLabel(_import_frame, text="", font=ctk.CTkFont(size=12), text_color=("gray50", "gray60"), anchor="w")
         self._import_files_label.grid(row=4, column=0, sticky="w", padx=6, pady=(0, 2))
+        self._import_pending_paths = []
 
         def do_select_import_files():
             paths = filedialog.askopenfilenames(
@@ -2253,7 +2251,10 @@ class App(ctk.CTk):
             if errors:
                 messagebox.showerror("", t("dictionaries.import_errors", count=len(errors), files=", ".join(errors[:5]) + ("..." if len(errors) > 5 else "")))
 
-        self._import_pending_paths = []
+        self._import_btn_select = ctk.CTkButton(_import_frame, text=t("dictionaries.import_select_files"), width=220, command=do_select_import_files)
+        self._import_btn_select.grid(row=2, column=0, sticky="w", padx=6, pady=(0, 4))
+        self._import_btn_import = ctk.CTkButton(_import_frame, text=t("dictionaries.import_do"), width=220, command=do_import_dictionaries)
+        self._import_btn_import.grid(row=3, column=0, sticky="w", padx=6, pady=(0, 4))
 
         def _show_edit_preset_section(pname: str):
             """Показать третий раздел и загрузить пресет для редактирования."""
@@ -2655,6 +2656,7 @@ class App(ctk.CTk):
                 for row_i, info in enumerate(lst):
                     did = info["id"]
                     name = info.get("name") or did
+                    dtype = info.get("type") or TYPE_CORRECTION
                     var = ctk.BooleanVar(value=did in (self.enabled_dictionary_ids or []))
                     def _on_toggle(did_=did, v=var):
                         ids = list(self.enabled_dictionary_ids or [])
@@ -2665,8 +2667,13 @@ class App(ctk.CTk):
                             ids = [x for x in ids if x != did_]
                         self.enabled_dictionary_ids = ids
                         refresh_global_list()
-                    cb = ctk.CTkCheckBox(self._preset_tab_dict_list, text=f"{name}", variable=var, command=lambda did_=did, v=var: _on_toggle(did_, v))
-                    cb.grid(row=row_i, column=0, sticky="w", padx=6, pady=2)
+                    row_f = ctk.CTkFrame(self._preset_tab_dict_list, fg_color="transparent", corner_radius=4)
+                    row_f.grid(row=row_i, column=0, sticky="ew", pady=2)
+                    row_f.grid_columnconfigure(1, weight=1)
+                    cb = ctk.CTkCheckBox(row_f, text="", width=22, variable=var, command=lambda did_=did, v=var: _on_toggle(did_, v))
+                    cb.grid(row=0, column=0, sticky="w", padx=(6, 4), pady=4)
+                    lbl = ctk.CTkLabel(row_f, text=f"{name} ({dtype})", anchor="w")
+                    lbl.grid(row=0, column=1, sticky="ew", padx=8, pady=4)
             # Низ: список пресетов — галочка (применить к проекту) и клик по названию (редактировать пресет)
             for w in list(self._preset_tab_preset_list.winfo_children()):
                 try:

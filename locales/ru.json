@@ -162,7 +162,7 @@
   "dictionaries.import_done": "Импортировано словарей: {count}.",
   "dictionaries.import_errors": "Не удалось импортировать {count} файл(ов): {files}",
   "presets.create_title": "Создать пресеты",
-  "presets.create_desc": "Отметьте списки и создайте пресет.",
+  "presets.create_desc": "Отметьте словари и создайте пресет.",
   "presets.apply_title": "Применить пресеты в проекте",
   "presets.apply_desc": "Отметьте пресеты, чтобы применить их в проекте.",
   "presets.edit_title": "Редактировать пресет",
