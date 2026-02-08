@@ -1,4 +1,5 @@
 import glob
+import json as _json
 import os
 import re
 import shutil
@@ -7,7 +8,10 @@ import sys
 import tempfile
 import threading
 import time
+import webbrowser
 from datetime import datetime
+from urllib.request import Request, urlopen
+from urllib.error import URLError
 from typing import Dict, Optional
 import customtkinter as ctk
 from tkinter import filedialog, messagebox, Canvas, Frame, StringVar, Toplevel, Label, Menu, simpledialog
@@ -120,6 +124,10 @@ from AudioPlaybackService import AudioPlaybackService
 from language_names import get_language_combo_values, language_display_to_code
 # UI strings: use t("key") for localized text; keys are in locales/en.json, locales/ru.json
 from i18n import t, set_locale, get_locale, get_available_locales, load_locale_preference, save_locale_preference, load_config, save_config
+
+# Версия приложения (для заголовка, строки состояния и проверки обновлений)
+APP_VERSION = "1.0.0"
+GITHUB_RELEASES_URL = "https://api.github.com/repos/timursarsembai/WhisperTranscriber/releases/latest"
 
 # Маппинг размера модели из UI на repo_id в Hugging Face
 MODEL_SIZE_TO_REPO = {
@@ -547,19 +555,42 @@ class App(ctk.CTk):
         )
         self.btn_settings.grid(row=0, column=3, padx=10, pady=10)
 
-        # --- Строка состояния внизу: время последнего сохранения проекта ---
+        # --- Строка состояния внизу: слева — сохранено, по центру — версия и проверка обновлений, справа — поддержка ---
         self._last_save_time = None  # datetime или None
+        self._update_available = None  # None=не проверено, False=актуально, str=доступна версия
+        self._update_check_in_progress = False
+        self._update_dots_job = None
+        self._update_dots_index = 0
+        self._update_check_timer = None
         self._status_bar_frame = ctk.CTkFrame(self, fg_color=("gray92", "gray20"), height=22)
         self._status_bar_frame.grid(row=6, column=0, columnspan=3, sticky="ew", padx=20, pady=(0, 8))
         self._status_bar_frame.grid_propagate(False)
         self._status_bar_frame.grid_columnconfigure(0, weight=1)
+        self._status_bar_frame.grid_columnconfigure(1, weight=0)
+        self._status_bar_frame.grid_columnconfigure(2, weight=0)
         self._status_bar_label = ctk.CTkLabel(
             self._status_bar_frame, text="", font=ctk.CTkFont(size=11), text_color=("gray40", "gray55"), anchor="w"
         )
-        self._status_bar_label.place(relx=0, x=10, rely=0.5, anchor="w")
+        self._status_bar_label.grid(row=0, column=0, sticky="w", padx=(10, 4), pady=0)
+        _status_center = ctk.CTkFrame(self._status_bar_frame, fg_color="transparent")
+        _status_center.grid(row=0, column=1, sticky="ew", padx=8, pady=0)
+        self._status_version_lbl = ctk.CTkLabel(_status_center, text=f"v{APP_VERSION}", font=ctk.CTkFont(size=11), text_color=("gray40", "gray55"))
+        self._status_version_lbl.pack(side="left", padx=(0, 6))
+        self._status_update_lbl = ctk.CTkLabel(
+            _status_center, text=t("status.check_updates"), font=ctk.CTkFont(size=11),
+            text_color=("gray50", "gray60"), cursor="hand2"
+        )
+        self._status_update_lbl.pack(side="left")
+        self._status_update_lbl.bind("<Button-1>", lambda e: self._on_check_updates_click())
+        self._status_support_btn = ctk.CTkButton(
+            self._status_bar_frame, text=t("status.support_project"), font=ctk.CTkFont(size=11),
+            fg_color=("#1f6aa5", "#2a7dba"), height=18, width=110, command=self._show_support_modal
+        )
+        self._status_support_btn.grid(row=0, column=2, sticky="e", padx=(4, 10), pady=0)
 
         self._refresh_project_files_list()
         self._update_status_bar()
+        self._check_github_update_async()
 
     def _scroll_project_files(self, e):
         """Прокрутка панели «Файлы проекта» колесом мыши."""
@@ -1323,6 +1354,9 @@ class App(ctk.CTk):
     def _refresh_ui(self):
         """Обновить все переводимые надписи интерфейса после смены языка."""
         self._update_session_title()
+        self._update_status_bar()
+        if hasattr(self, "_status_support_btn"):
+            self._status_support_btn.configure(text=t("status.support_project"))
         if not self.current_file:
             self.lbl_file.configure(text=t("top.no_file_formats"))
         self.btn_export_txt.configure(text=t("export.txt"))
@@ -2784,7 +2818,7 @@ class App(ctk.CTk):
         refresh_presets_tab()
 
     def _update_status_bar(self):
-        """Обновляет строку состояния: время последнего сохранения проекта (дд.мм.гггг чч:мм:сс)."""
+        """Обновляет строку состояния: время последнего сохранения; по центру — версия и ссылка на обновление."""
         if getattr(self, "_status_bar_label", None) is None:
             return
         if self._last_save_time:
@@ -2792,11 +2826,146 @@ class App(ctk.CTk):
             self._status_bar_label.configure(text=t("status.saved_at") + fmt)
         else:
             self._status_bar_label.configure(text="")
+        if getattr(self, "_status_update_lbl", None) is not None:
+            if getattr(self, "_update_check_in_progress", False):
+                n = (getattr(self, "_update_dots_index", 0) % 3) + 1
+                self._status_update_lbl.configure(text=t("status.check_updates") + " " + "." * n, text_color=("gray50", "gray60"))
+            elif self._update_available:
+                self._status_update_lbl.configure(text=t("status.update_available"), text_color="#c62828")
+            elif self._update_available is False:
+                self._status_update_lbl.configure(text=t("status.latest_version"), text_color=("gray50", "gray60"))
+            else:
+                self._status_update_lbl.configure(text=t("status.check_updates"), text_color=("gray50", "gray60"))
+
+    def _parse_version(self, s: str):
+        """Преобразует 'v1.0.0' или '1.0.0' в кортеж (1, 0, 0) для сравнения."""
+        s = (s or "").strip().lstrip("vV")
+        parts = re.findall(r"\d+", s)
+        return tuple(int(x) for x in parts[:3]) if parts else (0, 0, 0)
+
+    def _start_update_check_ui(self):
+        """Показать «Проверить обновления ...» и запустить анимацию точек."""
+        self._update_check_in_progress = True
+        if getattr(self, "_update_dots_job", None) is not None:
+            self.after_cancel(self._update_dots_job)
+            self._update_dots_job = None
+        self._update_dots_index = 0
+        self._update_status_bar()
+        self._animate_update_dots()
+
+    def _animate_update_dots(self):
+        """Цикл анимации «Проверить обновления . / .. / ...»."""
+        if not getattr(self, "_update_check_in_progress", False):
+            return
+        self._update_dots_index = (getattr(self, "_update_dots_index", 0) + 1) % 3
+        n = self._update_dots_index + 1
+        if getattr(self, "_status_update_lbl", None) is not None:
+            self._status_update_lbl.configure(text=t("status.check_updates") + " " + "." * n)
+        self._update_dots_job = self.after(500, self._animate_update_dots)
+
+    def _finish_update_check(self):
+        """По завершении проверки: убрать анимацию, обновить статус, запланировать следующую проверку через час."""
+        if getattr(self, "_update_dots_job", None) is not None:
+            self.after_cancel(self._update_dots_job)
+            self._update_dots_job = None
+        self._update_check_in_progress = False
+        self._update_status_bar()
+        self._schedule_next_update_check()
+
+    def _schedule_next_update_check(self):
+        """Запланировать следующую проверку обновлений через 1 час."""
+        if getattr(self, "_update_check_timer", None) is not None:
+            self.after_cancel(self._update_check_timer)
+        self._update_check_timer = self.after(3600000, self._run_hourly_update_check)
+
+    def _run_hourly_update_check(self):
+        """Проверка обновлений по таймеру (раз в час)."""
+        self._update_check_timer = None
+        self._start_update_check_ui()
+        self._check_github_update_async()
+
+    def _check_github_update_async(self):
+        """В фоне запрашивает GitHub API и обновляет self._update_available."""
+        self.after(0, self._start_update_check_ui)
+
+        def _fetch():
+            try:
+                req = Request(GITHUB_RELEASES_URL, headers={"Accept": "application/vnd.github.v3+json"})
+                with urlopen(req, timeout=10) as r:
+                    data = _json.loads(r.read().decode())
+                tag = (data.get("tag_name") or "").strip()
+                if not tag:
+                    self._update_available = False
+                else:
+                    latest = self._parse_version(tag)
+                    current = self._parse_version(APP_VERSION)
+                    self._update_available = tag if latest > current else False
+            except Exception:
+                self._update_available = False
+            self.after(0, self._finish_update_check)
+
+        threading.Thread(target=_fetch, daemon=True).start()
+
+    def _on_check_updates_click(self):
+        """Клик по «Проверить обновления» / «Доступно обновление»: открыть страницу релизов или предложить обновление."""
+        if self._update_available:
+            webbrowser.open("https://github.com/timursarsembai/WhisperTranscriber/releases")
+        else:
+            self._update_available = None
+            self._check_github_update_async()
+
+    def _show_support_modal(self):
+        """Модальное окно «Поддержать проект» по центру экрана: кнопки DonationAlerts, Liberapay и текст благодарности."""
+        win = ctk.CTkToplevel(self)
+        win.title(t("support.modal_title"))
+        width, height = 320, 168  # высота +20% от 140
+        win.geometry(f"{width}x{height}")
+        win.transient(self)
+        win.grab_set()
+        win.focus_set()
+        frame = ctk.CTkFrame(
+            win, fg_color=("gray95", "gray18"), corner_radius=12,
+            border_width=1, border_color=("#c0c0c0", "#404040")
+        )
+        frame.pack(fill="both", expand=True, padx=20, pady=20)
+        frame.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            frame, text=t("support.modal_title"), font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=("gray15", "gray88")
+        ).grid(row=0, column=0, pady=(16, 12))
+        btn_da = ctk.CTkButton(
+            frame, text="DonationAlerts", width=220, height=32,
+            fg_color=("#2563eb", "#3b82f6"), hover_color=("#1d4ed8", "#2563eb"),
+            command=lambda: (webbrowser.open("https://www.donationalerts.com/r/timursarsembai"), win.destroy())
+        )
+        btn_da.grid(row=1, column=0, pady=4)
+        btn_lp = ctk.CTkButton(
+            frame, text="Liberapay", width=220, height=32,
+            fg_color=("#16a34a", "#22c55e"), hover_color=("#15803d", "#16a34a"),
+            command=lambda: (webbrowser.open("https://liberapay.com/timursarsembai/donate"), win.destroy())
+        )
+        btn_lp.grid(row=2, column=0, pady=4)
+        thanks_lbl = ctk.CTkLabel(
+            frame, text=t("support.thanks"), font=ctk.CTkFont(size=12),
+            text_color=("gray40", "gray55"), wraplength=280, justify="center"
+        )
+        thanks_lbl.grid(row=3, column=0, pady=(12, 16), padx=12)
+        win.protocol("WM_DELETE_WINDOW", win.destroy)
+
+        def _center_on_screen():
+            win.update_idletasks()
+            sw = win.winfo_screenwidth()
+            sh = win.winfo_screenheight()
+            x = (sw - width) // 2
+            y = (sh - height) // 2
+            win.geometry(f"{width}x{height}+{x}+{y}")
+
+        win.after(50, _center_on_screen)
 
     def _update_session_title(self):
-        """Обновляет заголовок окна: имя файла проекта, папка проекта или название приложения."""
+        """Обновляет заголовок окна: имя файла проекта — название приложения, папка — приложение или только приложение."""
         if self.current_session_path:
-            self.title(os.path.basename(self.current_session_path))
+            self.title(f"{os.path.basename(self.current_session_path)} — {t('app.title')}")
         elif self.current_project_dir:
             self.title(f"{os.path.basename(self.current_project_dir)} — {t('app.title')}")
         else:
